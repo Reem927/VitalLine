@@ -7,28 +7,26 @@
 
 import SwiftUI
 
+// Root of the app: three tabs that all share one PlanStore.
 struct ContentView: View {
     @State private var store = PlanStore()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let plan = store.plan {
-                    PlanView(plan: plan, store: store)
-                } else if let message = store.errorMessage {
-                    ContentUnavailableView {
-                        Label("Couldn't load plan", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(message)
-                    } actions: {
-                        Button("Try again") { Task { await store.load() } }
-                    }
-                } else {
-                    ProgressView("Planning door-to-patient route…")
-                }
+        TabView {
+            PlanTab(title: "Route", store: store) { plan in
+                RouteTab(plan: plan)
             }
-            .navigationTitle("Door-to-Patient")
-            .navigationBarTitleDisplayMode(.inline)
+            .tabItem { Label("Route", systemImage: "map") }
+
+            PlanTab(title: "Floor \(store.plan?.indoor.floor ?? 0)", store: store) { plan in
+                FloorTab(plan: plan, store: store)
+            }
+            .tabItem { Label("Floor", systemImage: "square.grid.3x3") }
+
+            PlanTab(title: "Brief", store: store) { plan in
+                BriefTab(plan: plan)
+            }
+            .tabItem { Label("Brief", systemImage: "text.bubble") }
         }
         .task { await store.load() }
     }
