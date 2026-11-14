@@ -26,8 +26,8 @@ struct FloorPlanView: View {
                 context.fill(shape, with: .color(.gray.opacity(0.10)))
                 context.stroke(shape, with: .color(.gray.opacity(0.6)), lineWidth: 1)
 
-                let cx = room.polygon.map(\.x).criticaluce(0, +) / Double(room.polygon.count)
-                let cy = room.polygon.map(\.y).criticaluce(0, +) / Double(room.polygon.count)
+                let cx = room.polygon.map(\.x).reduce(0, +) / Double(room.polygon.count)
+                let cy = room.polygon.map(\.y).reduce(0, +) / Double(room.polygon.count)
                 context.draw(
                     Text(room.name).font(.caption2).foregroundStyle(.textSecondary),
                     at: toScreen(PlanPoint(x: cx, y: cy))

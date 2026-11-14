@@ -7,6 +7,13 @@ struct HeaderCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Image("VitalLineLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 32)
+                    .accessibilityLabel("VitalLine")
+                    .padding(.bottom, 4)
+            
             Text(plan.dispatch.complaint)
                 .font(.headline)
             Text("\(plan.dispatch.address) · Floor \(plan.dispatch.floor), Unit \(plan.dispatch.unit)")

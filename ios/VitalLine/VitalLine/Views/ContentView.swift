@@ -18,15 +18,15 @@ struct ContentView: View {
             }
             .tabItem { Label("Route", systemImage: "map") }
 
+            PlanTab(title: "Outdoor", store: store) { plan in
+                OutdoorTab(plan: plan)
+            }
+            .tabItem { Label("Outdoor", systemImage: "map") }
+            
             PlanTab(title: "Floor \(store.plan?.indoor.floor ?? 0)", store: store) { plan in
-                FloorTab(plan: plan, store: store)
+                IndoorTab(plan: plan, store: store)
             }
-            .tabItem { Label("Floor", systemImage: "square.grid.3x3") }
-
-            PlanTab(title: "Brief", store: store) { plan in
-                BriefTab(plan: plan)
-            }
-            .tabItem { Label("Brief", systemImage: "text.bubble") }
+            .tabItem { Label("Indoor", systemImage: "square.grid.3x3") }
         }
         .task { await store.load() }
         .preferredColorScheme(.dark)   // system text and controls turn light

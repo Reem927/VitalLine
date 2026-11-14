@@ -63,7 +63,7 @@ struct RouteTab: View {
 
 // Tab 2: inside the building. The elevator toggle lives here
 // because this is where the demo twist is most visible.
-struct FloorTab: View {
+struct IndoorTab: View {
     let plan: Plan
     @Bindable var store: PlanStore
 
@@ -94,18 +94,19 @@ struct FloorTab: View {
 }
 
 // Tab 3: the five-line brief and the Wolfram proof.
-struct BriefTab: View {
+struct OutdoorTab: View {
     let plan: Plan
 
     var body: some View {
         HeaderCard(plan: plan)
 
-        SectionTitle("Crew brief")
-        BriefView(lines: plan.brief, verification: plan.verification)
-            .card()
+        SectionTitle("Outdoor approach")
+        RouteMapView(outdoor: plan.outdoor)
+            .frame(height: 280)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        FlagsList(flags: plan.outdoor.flags)
 
-        Text("Decision aid only. The crew decides. Demo data is synthetic.")
-            .font(.footnote)
-            .foregroundStyle(.textSecondary)
+        SectionTitle("Access")
+        AccessNotesView(notes: plan.access)
     }
 }
