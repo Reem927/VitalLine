@@ -20,6 +20,10 @@ final class PlanStore {
     var errorMessage: String?
     var elevatorOut = false
 
+    // Timeline of the current response, saved to History on completion.
+    var events: [ResponseEvent] = []
+    private var dispatchReceivedAt: Date?
+
     // True once every agent has finished successfully.
     var agentsDone: Bool {
         !isPlanning && plan != nil && !tasks.isEmpty && tasks.allSatisfy(\.isDone)
@@ -30,6 +34,7 @@ final class PlanStore {
         errorMessage = nil
         do {
             dispatch = try await API.fetchDispatch()
+            dispatchReceivedAt = .now
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -38,6 +43,10 @@ final class PlanStore {
 
     // A new response: clear the previous one's results, then run every agent.
     func startResponse() async {
+        events = [
+            ResponseEvent(kind: .dispatchReceived, date: dispatchReceivedAt ?? .now, text: "Dispatch received"),
+            ResponseEvent(kind: .enRoute, date: .now, text: "Acknowledged / En route"),
+        ]
         building = nil
         outdoor = nil
         plan = nil
@@ -46,7 +55,26 @@ final class PlanStore {
 
     // Same response, new setting: keep showing the old plan until the new one lands.
     func replan() async {
+        if events.contains(where: { $0.kind == .enRoute }) {
+            log(.routeUpdated, elevatorOut ? "Route updated: elevator unavailable, stairs used"
+                                           : "Route updated: elevator back in service")
+        }
         await runAgents(cached: true)
+    }
+
+    // MARK: Timeline marks (each recorded once per response)
+
+    func markArrivedAtBuilding() { logOnce(.arrivedAtBuilding, "Arrived at building") }
+    func markEnteredLobby()      { logOnce(.enteredLobby, "Entered lobby") }
+    func markAtPatient()         { logOnce(.atPatient, "At patient") }
+
+    private func log(_ kind: ResponseEvent.Kind, _ text: String) {
+        events.append(ResponseEvent(kind: kind, date: .now, text: text))
+    }
+
+    private func logOnce(_ kind: ResponseEvent.Kind, _ text: String) {
+        guard !events.contains(where: { $0.kind == kind }) else { return }
+        log(kind, text)
     }
 
     private func runAgents(cached: Bool) async {

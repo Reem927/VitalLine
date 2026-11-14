@@ -53,7 +53,10 @@ struct LiveNavigationView: View {
                 }
                 .card()
 
-                Button("View Indoor Plan") { router.push(.indoorPlan) }
+                Button("View Indoor Plan") {
+                    store.markArrivedAtBuilding()
+                    router.push(.indoorPlan)
+                }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(!store.agentsDone)
                     .opacity(store.agentsDone ? 1 : 0.4)
@@ -101,7 +104,10 @@ struct IndoorPlanView: View {
                     }
                 }
 
-                Button("Arrived at Patient") { router.push(.completed) }
+                Button("Arrived at Patient") {
+                    store.markAtPatient()
+                    router.push(.completed)
+                }
                     .buttonStyle(PrimaryButtonStyle())
             }
             .padding()
@@ -117,32 +123,6 @@ struct ARNavigationView: View {
         Text("AR navigation (optional idea)")
             .foregroundStyle(.textSecondary)
             .vitalScreen()
-    }
-}
-
-struct HistoryView: View {
-    @Environment(HistoryStore.self) private var history
-
-    var body: some View {
-        List {
-            if history.entries.isEmpty {
-                Text("No saved responses yet")
-                    .foregroundStyle(.textSecondary)
-            }
-            ForEach(history.entries) { entry in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.plan.dispatch.complaint).foregroundStyle(.textPrimary)
-                    Text(entry.plan.dispatch.address)
-                        .font(.caption).foregroundStyle(.textSecondary)
-                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption).foregroundStyle(.textSecondary)
-                }
-                .listRowBackground(Color.surface)
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .navigationTitle("History")
-        .vitalScreen()
     }
 }
 
