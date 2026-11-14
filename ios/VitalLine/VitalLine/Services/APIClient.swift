@@ -7,31 +7,39 @@ enum API {
     static let baseURL = URL(string: "https://YOUR-TUNNEL-URL.trycloudflare.com")!
     static let scenarioId = "houston-cardiac-14"
 
-    // MARK: Quick plan (dispatch + outdoor route) — POST /plan
+    // Where the rig starts. Fixed near the demo building so the route looks right
+    // on stage; swap for the phone's GPS (CoreLocation) if you have time.
+    static let crewLocation = LatLon(lat: 29.7570, lon: -95.3640)
 
-    static func fetchPlan(elevatorOut: Bool) async throws -> Plan {
-        if useMock {
-            try await Task.sleep(for: .milliseconds(400))
-            return try decode(Plan.self, from: mockJSON(elevatorOut))
-        }
-        let data = try await post("plan", body: PlanRequest(scenarioId: scenarioId, elevatorOut: elevatorOut))
-        return try decode(Plan.self, from: data)
+    private static func request(elevatorOut: Bool) -> PlanRequest {
+        PlanRequest(scenarioId: scenarioId, elevatorOut: elevatorOut, crewLocation: crewLocation)
     }
 
-    // MARK: Agent planning — POST /plan/start, then poll GET /plan/{job_id}
+    // MARK: Launch — POST /dispatch (the raw call; no agents)
 
-    // Yields an update every time the agents make progress.
-    // The last update has status "done" and a full plan.
-    static func planUpdates(elevatorOut: Bool) -> AsyncThrowingStream<PlanJob, Error> {
+    static func fetchDispatch() async throws -> DispatchInfo {
+        if useMock {
+            try await Task.sleep(for: .milliseconds(400))
+            return try decode(DispatchResponse.self, from: mockJSON(false)).dispatch   // extra keys ignored
+        }
+        let data = try await post("dispatch", body: request(elevatorOut: false))
+        return try decode(DispatchResponse.self, from: data).dispatch
+    }
+
+    // MARK: Agents — POST /plan/start, then poll GET /plan/{job_id}
+
+    // Yields an update every time an agent makes progress.
+    // The last update has status "done" (with the full plan) or "error".
+    // `cached` only affects the mock: location/outdoor finish instantly on a re-plan.
+    static func planUpdates(elevatorOut: Bool, cached: Bool) -> AsyncThrowingStream<PlanJob, Error> {
         AsyncThrowingStream { continuation in
             let work = Task {
                 do {
                     if useMock {
-                        try await mockAgents(elevatorOut: elevatorOut, continuation)
+                        try await mockAgents(elevatorOut: elevatorOut, cached: cached, continuation)
                     } else {
                         let start = try decode(StartJobResponse.self, from: try await post(
-                            "plan/start",
-                            body: PlanRequest(scenarioId: scenarioId, elevatorOut: elevatorOut)))
+                            "plan/start", body: request(elevatorOut: elevatorOut)))
                         while true {
                             let job = try decode(PlanJob.self, from: try await get("plan/\(start.jobId)"))
                             continuation.yield(job)
@@ -48,25 +56,35 @@ enum API {
         }
     }
 
-    // MARK: Mock agents: tasks finish one at a time, like the real backend
+    // MARK: Mock agents: same pattern as the real backend
 
-    private static func mockAgents(elevatorOut: Bool,
+    private static func mockAgents(elevatorOut: Bool, cached: Bool,
                                    _ c: AsyncThrowingStream<PlanJob, Error>.Continuation) async throws {
-        let script = MockAgents.tasks(elevatorOut: elevatorOut)
+        let full = try decode(Plan.self, from: mockJSON(elevatorOut))
+        let script = MockAgents.steps(elevatorOut: elevatorOut)
         var tasks = script.map { AgentTask(id: $0.id, title: $0.title, status: "pending", detail: nil) }
+        var building: Building?
+        var outdoor: Outdoor?
+
         func emit(_ status: String, _ plan: Plan? = nil) {
-            c.yield(PlanJob(jobId: "mock", status: status, tasks: tasks, plan: plan, error: nil))
+            c.yield(PlanJob(jobId: "mock", status: status, tasks: tasks,
+                            building: building, outdoor: outdoor, plan: plan, error: nil))
         }
 
         emit("running")
         for i in tasks.indices {
-            tasks[i] = AgentTask(id: tasks[i].id, title: tasks[i].title, status: "running", detail: nil)
+            let step = script[i]
+            tasks[i] = AgentTask(id: step.id, title: step.title, status: "running", detail: nil)
             emit("running")
-            try await Task.sleep(for: .milliseconds(Int.random(in: 700...1300)))
-            tasks[i] = AgentTask(id: tasks[i].id, title: tasks[i].title, status: "done", detail: script[i].detail)
+            if !(cached && step.cached) {
+                try await Task.sleep(for: .milliseconds(Int.random(in: 700...1300)))
+            }
+            tasks[i] = AgentTask(id: step.id, title: step.title, status: "done", detail: step.detail)
+            if step.id == "location" { building = full.building }
+            if step.id == "outdoor" { outdoor = full.outdoor }
             emit("running")
         }
-        emit("done", try decode(Plan.self, from: mockJSON(elevatorOut)))
+        emit("done", full)
     }
 
     // MARK: Helpers

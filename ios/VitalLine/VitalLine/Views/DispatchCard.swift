@@ -2,14 +2,14 @@ import SwiftUI
 
 // Summary of the incoming call. Reusable: Dispatch home and History rows.
 struct DispatchCard: View {
-    let plan: Plan
+    let dispatch: DispatchInfo
 
     private var etaText: String {
-        if let eta = plan.outdoor.etaMinutes { return "\(eta) min" }
+        if let eta = dispatch.etaMinutes { return "\(eta) min" }
         return "Calculating…"
     }
 
-    private var priority: String { plan.dispatch.priority ?? "Unknown" }
+    private var priority: String { dispatch.priority ?? "Unknown" }
 
     private var priorityColor: Color {
         switch priority.lowercased() {
@@ -25,7 +25,7 @@ struct DispatchCard: View {
                 Image(systemName: "cross.circle.fill")
                     .font(.title2)
                     .foregroundStyle(.critical)
-                Text(plan.dispatch.complaint)
+                Text(dispatch.complaint)
                     .font(.headline)
                     .foregroundStyle(.textPrimary)
             }
@@ -33,7 +33,7 @@ struct DispatchCard: View {
             Divider().overlay(Color.textSecondary.opacity(0.3))
 
             DispatchInfoRow(icon: "building.2",
-                            text: "\(plan.dispatch.address) · Floor \(plan.dispatch.floor), Unit \(plan.dispatch.unit)")
+                            text: "\(dispatch.address) · Floor \(dispatch.floor), Unit \(dispatch.unit)")
             DispatchInfoRow(icon: "clock", text: "ETA: \(etaText)")
 
             HStack(spacing: 8) {

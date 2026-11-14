@@ -24,6 +24,7 @@ struct DispatchInfo: Codable {
     let complaint: String
     let equipment: String          // "stretcher" | "stair_chair" | "bariatric"
     let priority: String?          // "High" | "Medium" | "Low"
+    let etaMinutes: Int?           // estimate sent with the call (CAD), before routing runs
 }
 
 struct Building: Codable {
@@ -114,8 +115,14 @@ struct Verification: Codable {
     let result: String
 }
 
-// What the app sends to POST /plan.
+// What POST /dispatch returns: the raw call from 911/CAD. No agents have run yet.
+struct DispatchResponse: Codable {
+    let dispatch: DispatchInfo
+}
+
+// What the app sends to POST /dispatch and POST /plan/start.
 struct PlanRequest: Codable {
     let scenarioId: String
     let elevatorOut: Bool
+    let crewLocation: LatLon?      // where the rig is; outdoor-route starts here
 }

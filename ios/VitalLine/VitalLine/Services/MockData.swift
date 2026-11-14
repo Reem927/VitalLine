@@ -1,6 +1,7 @@
 import Foundation
 
 // Synthetic demo data in the exact shape the backend must return.
+// Hand sample_plan.json to your backend teammate as the contract.
 enum MockData {
     static let stretcherJSON = #"""
 {
@@ -10,6 +11,7 @@ enum MockData {
     "unit": "1404",
     "complaint": "Cardiac arrest (synthetic call)",
     "equipment": "stretcher",
+    "eta_minutes": 8,
     "priority": "High"
   },
   "building": {
@@ -361,6 +363,7 @@ enum MockData {
     "unit": "1404",
     "complaint": "Cardiac arrest (synthetic call)",
     "equipment": "stair_chair",
+    "eta_minutes": 8,
     "priority": "High"
   },
   "building": {

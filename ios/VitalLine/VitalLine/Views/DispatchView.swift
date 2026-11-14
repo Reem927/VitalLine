@@ -14,10 +14,11 @@ struct DispatchView: View {
                     .font(.title2.bold())
                     .foregroundStyle(.textPrimary)
 
-                if let plan = store.plan {
-                    DispatchCard(plan: plan)
+                if let dispatch = store.dispatch {
+                    DispatchCard(dispatch: dispatch)
 
                     Button("Start Response") {
+                        Task { await store.startResponse() }   // all six agents start now
                         router.push(.routePreview)
                     }
                     .buttonStyle(PrimaryButtonStyle())

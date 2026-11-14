@@ -12,8 +12,8 @@ struct LiveNavigationView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let plan = store.plan {
-                    RouteMapView(outdoor: plan.outdoor)
+                if let outdoor = store.outdoor {
+                    RouteMapView(outdoor: outdoor)
                         .frame(height: 260)
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
@@ -27,6 +27,8 @@ struct LiveNavigationView: View {
                         HStack(spacing: 10) {
                             if task.isDone {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.success)
+                            } else if task.isFailed {
+                                Image(systemName: "xmark.octagon.fill").foregroundStyle(.critical)
                             } else if task.isRunning {
                                 ProgressView().tint(.brandPrimary)
                             } else {
@@ -40,6 +42,13 @@ struct LiveNavigationView: View {
                             }
                         }
                         .animation(.default, value: task.status)
+                    }
+                    if let message = store.errorMessage, !store.isPlanning {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.critical)
+                        Button("Retry") { Task { await store.replan() } }
+                            .buttonStyle(SecondaryButtonStyle())
                     }
                 }
                 .card()
