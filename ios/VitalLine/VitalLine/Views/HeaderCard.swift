@@ -11,14 +11,14 @@ struct HeaderCard: View {
                 .font(.headline)
             Text("\(plan.dispatch.address) · Floor \(plan.dispatch.floor), Unit \(plan.dispatch.unit)")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(minutesText(plan.time.minSeconds))–\(minutesText(plan.time.maxSeconds)) min")
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .contentTransition(.numericText())
                 Text("door to patient")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.textSecondary)
             }
 
             HStack {
@@ -38,7 +38,7 @@ struct VerifiedBadge: View {
     let verified: Bool
 
     var body: some View {
-        let color: Color = verified ? .green : .orange
+        let color: Color = verified ? .success : .caution
         Label(verified ? "Verified by Wolfram" : "Not verified",
               systemImage: verified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
             .font(.caption.bold())

@@ -17,6 +17,7 @@ struct PlanTab<Content: View>: View {
                         }
                         .padding()
                     }
+                    .background(Color.midnight)
                 } else if let message = store.errorMessage {
                     ContentUnavailableView {
                         Label("Couldn't load plan", systemImage: "exclamationmark.triangle")
@@ -72,7 +73,7 @@ struct FloorTab: View {
         Toggle(isOn: $store.elevatorOut) {
             Label("Elevator out of service", systemImage: "arrow.up.arrow.down.square")
         }
-        .tint(.red)
+        .tint(.critical)
         .card()
         .sensoryFeedback(.impact, trigger: store.elevatorOut)
         .onChange(of: store.elevatorOut) {
@@ -105,6 +106,6 @@ struct BriefTab: View {
 
         Text("Decision aid only. The crew decides. Demo data is synthetic.")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.textSecondary)
     }
 }

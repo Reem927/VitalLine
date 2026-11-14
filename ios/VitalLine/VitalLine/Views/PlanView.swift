@@ -13,7 +13,7 @@ struct PlanView: View {
                 Toggle(isOn: $store.elevatorOut) {
                     Label("Elevator out of service", systemImage: "arrow.up.arrow.down.square")
                 }
-                .tint(.red)
+                .tint(.critical)
                 .card()
                 .sensoryFeedback(.impact, trigger: store.elevatorOut)   // haptic buzz
                 .onChange(of: store.elevatorOut) {
@@ -44,7 +44,7 @@ struct PlanView: View {
 
                 Text("Decision aid only. The crew decides. Demo data is synthetic.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.textSecondary)
             }
             .padding()
         }
@@ -73,7 +73,7 @@ extension View {
         self
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(Color.surface, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 

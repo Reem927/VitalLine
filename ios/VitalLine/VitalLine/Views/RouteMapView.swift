@@ -7,18 +7,18 @@ struct RouteMapView: View {
     var body: some View {
         Map(initialPosition: .automatic) {
             MapPolyline(coordinates: outdoor.route.map(\.coordinate))
-                .stroke(.blue, lineWidth: 5)
+                .stroke(.brandPrimary, lineWidth: 5)
 
             Annotation("Staging", coordinate: outdoor.staging.coordinate) {
                 Image(systemName: "staroflife.fill")
                     .foregroundStyle(.white)
                     .padding(6)
-                    .background(.red, in: Circle())
+                    .background(.critical, in: Circle())
             }
 
             Marker("Entrance", systemImage: "door.left.hand.open",
                    coordinate: outdoor.entrance.coordinate)
-                .tint(.green)
+                .tint(.success)
         }
     }
 }
@@ -32,10 +32,10 @@ struct FlagsList: View {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(flag.text)
-                        Text(flag.source).font(.caption).foregroundStyle(.secondary)
+                        Text(flag.source).font(.caption).foregroundStyle(.textSecondary)
                     }
                 } icon: {
-                    Image(systemName: icon(for: flag.kind)).foregroundStyle(.orange)
+                    Image(systemName: icon(for: flag.kind)).foregroundStyle(.caution)
                 }
             }
         }
@@ -71,7 +71,7 @@ struct AccessNotesView: View {
                         }
                     }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.textSecondary)
                 }
                 .card()
             }

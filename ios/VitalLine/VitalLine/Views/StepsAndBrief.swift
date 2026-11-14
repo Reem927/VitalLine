@@ -10,12 +10,12 @@ struct StepsView: View {
                     Text("\(step.id)")
                         .font(.caption.bold())
                         .frame(width: 26, height: 26)
-                        .background(Color.blue.opacity(0.15), in: Circle())
+                        .background(Color.brandPrimary.opacity(0.15), in: Circle())
                     VStack(alignment: .leading, spacing: 2) {
                         Text(step.text)
                         Text("\(step.secondsMin)–\(step.secondsMax) s")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
             }

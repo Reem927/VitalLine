@@ -29,6 +29,8 @@ struct ContentView: View {
             .tabItem { Label("Brief", systemImage: "text.bubble") }
         }
         .task { await store.load() }
+        .preferredColorScheme(.dark)   // system text and controls turn light
+        .tint(.brandPrimary)           // tab bar, buttons, links use your cyan
     }
 }
 
