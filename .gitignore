@@ -88,3 +88,12 @@ supabase/.env
 # Personal, never commit
 CLAUDE.md
 .claude/settings.local.json
+
+# CoStar, Matterport and Vexcel data: hackathon use only, never republish
+data/raw/
+data/cache/
+mp_out/
+*.zip
+*.dxf
+*.ply
+models_index.csv
