@@ -1,0 +1,31 @@
+[project]
+name = "vitalline-backend"
+version = "0.1.0"
+description = "VitalLine backend: FastAPI service and deepagents planner. Prototype, not a medical device."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.163.0",
+    "uvicorn==0.54.0",
+    "pydantic==2.14.3",
+    "python-dotenv==1.2.4",
+    "httpx==0.28.1",
+    "deepagents==0.7.38",
+    "langchain-google-genai==4.5.0",
+    "langchain-mcp-adapters==0.3.2",
+    "langsmith==0.14.17",
+    "networkx==3.7",
+    "shapely==2.2.0",
+    "supabase==2.34.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "ruff==0.17.5",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
