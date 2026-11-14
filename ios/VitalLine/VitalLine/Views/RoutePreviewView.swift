@@ -51,6 +51,7 @@ struct RoutePreviewView: View {
                 }
 
                 Button("Start Navigation") {
+                    Task { await store.runAgents() }   // agents start planning the indoor leg
                     router.push(.liveNavigation)
                 }
                 .buttonStyle(PrimaryButtonStyle())

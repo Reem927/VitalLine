@@ -10,18 +10,47 @@ struct LiveNavigationView: View {
     @Environment(AppRouter.self) private var router
 
     var body: some View {
-        VStack(spacing: 16) {
-            if let plan = store.plan {
-                RouteMapView(outdoor: plan.outdoor)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let plan = store.plan {
+                    RouteMapView(outdoor: plan.outdoor)
+                        .frame(height: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+
+                // Agent progress (Person B: AgentProgressView replaces this block)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(store.agentsDone ? "Plan Ready" : "Creating Plan…")
+                        .font(.headline)
+                        .foregroundStyle(.textPrimary)
+                    ForEach(store.tasks) { task in
+                        HStack(spacing: 10) {
+                            if task.isDone {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.success)
+                            } else if task.isRunning {
+                                ProgressView().tint(.brandPrimary)
+                            } else {
+                                Image(systemName: "circle").foregroundStyle(.textSecondary)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(task.title).foregroundStyle(.textPrimary)
+                                if let detail = task.detail {
+                                    Text(detail).font(.caption).foregroundStyle(.textSecondary)
+                                }
+                            }
+                        }
+                        .animation(.default, value: task.status)
+                    }
+                }
+                .card()
+
+                Button("View Indoor Plan") { router.push(.indoorPlan) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!store.agentsDone)
+                    .opacity(store.agentsDone ? 1 : 0.4)
             }
-            Text("Placeholder: live navigation + agent progress")
-                .font(.footnote)
-                .foregroundStyle(.textSecondary)
-            Button("View Indoor Plan") { router.push(.indoorPlan) }
-                .buttonStyle(PrimaryButtonStyle())
+            .padding()
         }
-        .padding()
         .navigationTitle("Live Navigation")
         .navigationBarTitleDisplayMode(.inline)
         .vitalScreen()
@@ -44,12 +73,20 @@ struct IndoorPlanView: View {
 
                 ElevatorToggle()
 
+                if store.isPlanning {
+                    Label("Agents re-planning…", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.caution)
+                }
+
                 if let plan = store.plan {
                     if showFloorPlan {
-                        FloorPlanCanvas(indoor: plan.indoor)
-                            .frame(height: 320)
+                        FloorPlanCanvas(indoor: plan.indoor, showsPath: false)
+                            .frame(height: 360)
                             .card()
                     } else {
+                        FloorPlanCanvas(indoor: plan.indoor)
+                            .frame(height: 260)
+                            .card()
                         HeaderCard(plan: plan)
                         StepsView(steps: plan.steps).card()
                     }

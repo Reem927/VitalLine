@@ -10,6 +10,7 @@ import SwiftUI
 //   so path/door coordinates in meters line up with the picture.
 struct FloorPlanCanvas: View {
     let indoor: Indoor
+    var showsPath = true        // false = static reference map (Floor Plan tab)
     @State private var imageFailed = false
 
     private var imageURL: URL? {
@@ -65,32 +66,34 @@ struct FloorPlanCanvas: View {
                     }
                 }
 
-                // Crew path (dashed when using the stair chair)
-                if let start = indoor.path.first {
-                    var route = Path()
-                    route.move(to: toScreen(start))
-                    for p in indoor.path.dropFirst() { route.addLine(to: toScreen(p)) }
-                    let dash: [CGFloat] = indoor.mode == "stair_chair" ? [8, 6] : []
-                    let style = StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: dash)
-                    // dark outline first so the line stays visible on a busy image
-                    context.stroke(route, with: .color(.black.opacity(0.5)),
-                                   style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round, dash: dash))
-                    context.stroke(route, with: .color(.blue), style: style)
-                }
+                if showsPath {
+                    // Crew path (dashed when using the stair chair)
+                    if let start = indoor.path.first {
+                        var route = Path()
+                        route.move(to: toScreen(start))
+                        for p in indoor.path.dropFirst() { route.addLine(to: toScreen(p)) }
+                        let dash: [CGFloat] = indoor.mode == "stair_chair" ? [8, 6] : []
+                        let style = StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: dash)
+                        // dark outline first so the line stays visible on a busy image
+                        context.stroke(route, with: .color(.black.opacity(0.5)),
+                                       style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round, dash: dash))
+                        context.stroke(route, with: .color(.blue), style: style)
+                    }
 
-                // Doors: green fits the equipment, red does not
-                for door in indoor.doors {
-                    let c = toScreen(door.at)
-                    let dot = CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12)
-                    context.fill(Path(ellipseIn: dot), with: .color(door.passable ? .green : .red))
-                    context.stroke(Path(ellipseIn: dot), with: .color(.white), lineWidth: 1.5)
-                }
+                    // Doors: green fits the equipment, red does not
+                    for door in indoor.doors {
+                        let c = toScreen(door.at)
+                        let dot = CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12)
+                        context.fill(Path(ellipseIn: dot), with: .color(door.passable ? .green : .red))
+                        context.stroke(Path(ellipseIn: dot), with: .color(.white), lineWidth: 1.5)
+                    }
 
-                // Patient marker at the end of the path
-                if let end = indoor.path.last {
-                    context.draw(Text(Image(systemName: "cross.circle.fill"))
-                                    .font(.title2).foregroundStyle(.red),
-                                 at: toScreen(end))
+                    // Patient marker at the end of the path
+                    if let end = indoor.path.last {
+                        context.draw(Text(Image(systemName: "cross.circle.fill"))
+                                        .font(.title2).foregroundStyle(.red),
+                                     at: toScreen(end))
+                    }
                 }
             }
         }
