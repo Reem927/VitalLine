@@ -10,7 +10,8 @@ enum MockData {
     "floor": 14,
     "unit": "1404",
     "complaint": "Cardiac arrest (synthetic call)",
-    "equipment": "stretcher"
+    "equipment": "stretcher",
+    "priority": "High"
   },
   "building": {
     "name": "Demo Tower",
@@ -58,7 +59,9 @@ enum MockData {
         "text": "Reported pothole near loading zone",
         "source": "Houston 311 (sample)"
       }
-    ]
+    ],
+    "eta_minutes": 8,
+    "distance_km": 2.4
   },
   "access": [
     {
@@ -358,7 +361,8 @@ enum MockData {
     "floor": 14,
     "unit": "1404",
     "complaint": "Cardiac arrest (synthetic call)",
-    "equipment": "stair_chair"
+    "equipment": "stair_chair",
+    "priority": "High"
   },
   "building": {
     "name": "Demo Tower",
@@ -406,7 +410,9 @@ enum MockData {
         "text": "Reported pothole near loading zone",
         "source": "Houston 311 (sample)"
       }
-    ]
+    ],
+    "eta_minutes": 8,
+    "distance_km": 2.4
   },
   "access": [
     {

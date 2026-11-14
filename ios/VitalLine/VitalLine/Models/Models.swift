@@ -23,6 +23,7 @@ struct DispatchInfo: Codable {
     let unit: String
     let complaint: String
     let equipment: String          // "stretcher" | "stair_chair" | "bariatric"
+    let priority: String?          // "High" | "Medium" | "Low"
 }
 
 struct Building: Codable {
@@ -53,6 +54,8 @@ struct Outdoor: Codable {
     let staging: LatLon
     let entrance: LatLon
     let flags: [Flag]
+    let etaMinutes: Int?           // drive time rig -> entrance
+    let distanceKm: Double?
 }
 
 struct AccessNote: Codable, Identifiable {
@@ -90,6 +93,7 @@ struct Indoor: Codable {
     let path: [PlanPoint]
     let mode: String               // "stretcher" | "stair_chair"
     let elevatorOk: Bool
+    let floorPlanImageUrl: String? // optional: CoStar/Matterport floor plan image
 }
 
 struct Step: Codable, Identifiable {
