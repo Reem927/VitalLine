@@ -59,6 +59,32 @@ def _trace_id() -> str | None:
         return None
 
 
+def _ar_route(path: list[dict[str, float]]) -> list[dict[str, float]]:
+    """Plan path as AR waypoints: metres, origin at the first point, Y up, first leg along -Z.
+
+    The AR view assumes the phone starts at the first point facing along the first leg, so
+    the crew stands at the start (the unit door) and faces the way the first arrow points.
+    """
+    if len(path) < 2:
+        return []
+    x0, z0 = path[0]["x"], path[0]["y"]
+    dx, dz = path[1]["x"] - x0, path[1]["y"] - z0
+    length = math.hypot(dx, dz) or 1.0
+    s, c = -dx / length, -dz / length          # rotation that sends the first leg to -Z
+    out = []
+    for p in path:
+        x, z = p["x"] - x0, p["y"] - z0
+        out.append({"x": round(x * c - z * s, 3), "y": 0.0, "z": round(x * s + z * c, 3)})
+    return out
+
+
+def _is_real(text: str, kind: str) -> bool:
+    """Whether a step comes from scan data (True) or is modeled or estimated (False)."""
+    if kind != "walk":
+        return False
+    return "not scanned" not in text and "estimated" not in text
+
+
 class PlanBlocked(Exception):
     """A step failed in a way that must stop the plan (e.g. Wolfram mismatch, no route)."""
 
@@ -173,7 +199,7 @@ class PlanRun:
         rig = self.dispatch.get("rig_location")
         outdoor: dict[str, Any] = {"staging": staging, "entrance": entrance["location"],
                                    "flags": flags, "route": [], "eta_minutes": None,
-                                   "distance_km": None}
+                                   "distance_km": None, "maneuvers": []}
         meta: dict[str, Any] = {}
         if rig:
             r = drive_route(rig, staging)
@@ -181,6 +207,7 @@ class PlanRun:
                 route=[{"lat": lat, "lon": lon} for lat, lon in r["shape"]],
                 eta_minutes=max(1, math.ceil(r["minutes"])),
                 distance_km=r["km"],
+                maneuvers=r.get("maneuvers", []),
             )
             meta = {k: r.get(k) for k in ("source", "confidence", "request_url", "note", "minutes")}
             drive = f"{outdoor['eta_minutes']} min via {'Valhalla' if r['source'] == 'valhalla' else 'estimate'}"
@@ -248,6 +275,11 @@ class PlanRun:
             "mode": route.equipment.key,
             "elevator_ok": used_elevator,
             "floor_plan_image_url": None,
+            "wall_height_m": fp.get("wall_height_m"),
+            "path3d": [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path],
+            "ar_route": _ar_route(path),
+            "legs": [{"id": s.index, "kind": s.kind, "text": s.text, "real": _is_real(s.text, s.kind)}
+                     for s in route.steps],
         }
         steps = [{"id": s.index, "text": s.text, "seconds_min": math.floor(s.seconds[0]),
                   "seconds_max": math.ceil(s.seconds[1])} for s in route.steps]

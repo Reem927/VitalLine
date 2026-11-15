@@ -59,6 +59,7 @@ class ScanGraph:
     rooms: dict           # room_id -> Room
     doors: dict           # door_id -> Door
     graph: nx.Graph
+    room_heights: list = field(default_factory=list)   # scanned ceiling heights, metres
 
 
 def _label(room: dict) -> str:
@@ -192,7 +193,9 @@ def build(model: dict) -> ScanGraph:
                 length = math.hypot(run, rise) if rise is not None else run
                 g.add_edge(f"room:{rm.id}", f"room:{best.id}", weight=length, length=length, kind="stairs", rise_m=rise)
 
-    return ScanGraph(model["id"], model.get("name", ""), floors, rooms, doors, g)
+    heights = [((r.get("dimensions") or {}).get("height")) for r in model["rooms"]]
+    return ScanGraph(model["id"], model.get("name", ""), floors, rooms, doors, g,
+                     [h for h in heights if h])
 
 
 def rooms_labelled(sg: ScanGraph, label: str) -> list[str]:

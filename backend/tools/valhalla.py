@@ -1,4 +1,9 @@
-"""Outdoor driving route with Valhalla (OpenStreetMap). Public instance unless VALHALLA_URL is set."""
+"""Outdoor driving route with Valhalla (OpenStreetMap). Public instance unless VALHALLA_URL is set.
+
+Truck costing sized to the ambulance in rules/vehicle.py. Turn-by-turn maneuvers are kept with
+the shape index where each begins, so the app can show a next-turn banner during the drive.
+Results are cached under data/cache.
+"""
 
 from __future__ import annotations
 
@@ -42,31 +47,53 @@ def haversine_km(a: dict[str, float], b: dict[str, float]) -> float:
 
 
 def drive_route(origin: dict[str, float], dest: dict[str, float]) -> dict[str, Any]:
-    """Return {"minutes","km","shape":[[lat,lon],...],"source","confidence"}."""
+    """Return {"minutes","km","shape":[[lat,lon],...],"maneuvers","vehicle","source","confidence"}."""
+    from connectors import cache
+    from rules import vehicle
+
     settings = get_settings()
+    v = vehicle.profile()
+    truck = {"height": round(v["height_m"], 2), "width": round(v["width_m"], 2)}
+    if v.get("length_m"):
+        truck["length"] = round(v["length_m"], 2)
     body = {
         "locations": [{"lat": origin["lat"], "lon": origin["lon"]},
                       {"lat": dest["lat"], "lon": dest["lon"]}],
-        "costing": "auto",
+        "costing": "truck",
+        "costing_options": {"truck": truck},
         "units": "kilometers",
     }
     url = f"{settings.valhalla_url}/route"
     note = "offline mode"
     if not settings.offline:
+        key = cache.key_for("drive_route", body)
+        if (hit := cache.get("valhalla", key)) is not None:
+            return hit
         try:
             with client() as c:
-                resp = c.post(url, json=body)
+                resp = c.post(url, json=body, headers={"X-Client-Id": "hackathon-prototype"})
                 resp.raise_for_status()
                 trip = resp.json()["trip"]
-            shape = [pt for leg in trip["legs"] for pt in decode_polyline6(leg["shape"])]
-            return {
+            shape, maneuvers = [], []
+            for leg in trip["legs"]:
+                offset = len(shape)
+                shape += decode_polyline6(leg["shape"])
+                for m in leg.get("maneuvers", []):
+                    i = offset + m.get("begin_shape_index", 0)
+                    lat, lon = shape[min(i, len(shape) - 1)]
+                    maneuvers.append({"text": m.get("instruction", ""), "shape_index": i,
+                                      "lat": lat, "lon": lon, "km": m.get("length"),
+                                      "seconds": m.get("time"), "type": m.get("type")})
+            return cache.put("valhalla", key, {
                 "minutes": round(trip["summary"]["time"] / 60, 1),
                 "km": round(trip["summary"]["length"], 2),
                 "shape": shape,
+                "maneuvers": maneuvers,
+                "vehicle": {"source": v["source"], **truck},
                 "source": "valhalla",
                 "request_url": url,
                 "confidence": "medium",   # no live traffic in Valhalla
-            }
+            })
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             note = f"Valhalla unavailable: {type(exc).__name__}"
 
@@ -76,6 +103,7 @@ def drive_route(origin: dict[str, float], dest: dict[str, float]) -> dict[str, A
         "minutes": round(km / 30 * 60, 1),
         "km": round(km, 2),
         "shape": [[origin["lat"], origin["lon"]], [dest["lat"], dest["lon"]]],
+        "maneuvers": [],
         "source": "straight_line_estimate",
         "request_url": url,
         "confidence": "low",

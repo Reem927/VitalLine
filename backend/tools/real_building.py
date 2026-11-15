@@ -62,8 +62,10 @@ def _floor_plan(sg, path: dict, floor: int) -> tuple[dict, list[dict]]:
     doors = [{"id": d.id, "at": tf(d.x, d.y), "width_in": round(d.width_m / INCH_M, 1), "kind": "door",
               "confidence": d.confidence, "measured": d.measured, "source": d.source}
              for d in sg.doors.values() if d.floor_id in {r.floor_id for r in polys}]
+    heights = sorted(h for h in (sg.room_heights or []) if h)
     fp = {"floor": floor, "width_m": round(max(xs) - minx, 2), "height_m": round(maxy - min(ys), 2),
-          "rooms": rooms, "doors": doors}
+          "rooms": rooms, "doors": doors,
+          "wall_height_m": round(heights[len(heights) // 2], 2) if heights else None}
     points = [tf(w["x"], w["y"]) for w in path["waypoints"]]
     return fp, points
 
@@ -162,7 +164,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("real_building", BUILDING_ID, 4)
+    key = cache.key_for("real_building", BUILDING_ID, 5)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))

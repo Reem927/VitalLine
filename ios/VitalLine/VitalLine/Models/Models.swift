@@ -57,6 +57,34 @@ struct Outdoor: Codable {
     let flags: [Flag]
     let etaMinutes: Int?           // drive time rig -> entrance
     let distanceKm: Double?
+    let maneuvers: [Maneuver]?     // turn-by-turn from Valhalla; nil in mock data
+}
+
+// One turn instruction. shapeIndex is where it begins in `route`.
+struct Maneuver: Codable {
+    let text: String
+    let shapeIndex: Int
+    let lat: Double
+    let lon: Double
+    let km: Double?
+    let seconds: Double?
+    let type: Int?
+}
+
+// A point in metres. Plan frame: x right, y up, z = floor-plan y (grows downward).
+// AR frame (arRoute): origin at the first point, Y up, first leg along -Z.
+struct Point3: Codable {
+    let x: Double
+    let y: Double
+    let z: Double
+}
+
+// One leg of the route, marked real (from scan data) or modeled/estimated.
+struct Leg: Codable, Identifiable {
+    let id: Int
+    let kind: String               // "walk" | "elevator" | "stairs"
+    let text: String
+    let real: Bool
 }
 
 struct AccessNote: Codable, Identifiable {
@@ -95,6 +123,10 @@ struct Indoor: Codable {
     let mode: String               // "stretcher" | "stair_chair"
     let elevatorOk: Bool
     let floorPlanImageUrl: String? // optional: CoStar/Matterport floor plan image
+    let wallHeightM: Double?       // scanned ceiling height, for the 3D view
+    let path3d: [Point3]?          // path in the plan frame, for the 3D view
+    let arRoute: [Point3]?         // path in the AR frame, for AR navigation
+    let legs: [Leg]?
 }
 
 struct Step: Codable, Identifiable {
