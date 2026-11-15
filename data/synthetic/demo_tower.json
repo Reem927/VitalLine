@@ -1,0 +1,535 @@
+{
+  "_note": "Synthetic building for the VitalLine demo. Not a real property. Distances in meters, car and door sizes in inches. Floor plan: origin top-left, y grows downward.",
+  "id": "demo-tower",
+  "name": "Houston Residential Tower",
+  "address": "1200 Demo St, Houston, TX",
+  "location": {
+    "lat": 29.759,
+    "lon": -95.368
+  },
+  "timezone": "America/Chicago",
+  "floors": 20,
+  "parking": [
+    {
+      "id": "garage_a_l1",
+      "label": "Garage A",
+      "detail": "Level 1",
+      "clearance_ft": 11.0,
+      "location": {
+        "lat": 29.7587,
+        "lon": -95.3674
+      },
+      "near_entrance": "east",
+      "walk_to_entrance_m": 15
+    },
+    {
+      "id": "garage_a_l2",
+      "label": "Garage A",
+      "detail": "Level 2",
+      "clearance_ft": 7.0,
+      "location": {
+        "lat": 29.7587,
+        "lon": -95.3674
+      },
+      "near_entrance": "east",
+      "walk_to_entrance_m": 25
+    },
+    {
+      "id": "curb_north",
+      "label": "Street curb",
+      "detail": "Demo St, north side",
+      "clearance_ft": null,
+      "location": {
+        "lat": 29.7594,
+        "lon": -95.3681
+      },
+      "near_entrance": "north",
+      "walk_to_entrance_m": 10
+    }
+  ],
+  "entrances": [
+    {
+      "id": "east",
+      "label": "Main entrance",
+      "detail": "east side",
+      "node": "east_entry",
+      "location": {
+        "lat": 29.7589,
+        "lon": -95.3676
+      }
+    },
+    {
+      "id": "north",
+      "label": "North entrance",
+      "detail": "north side, service door",
+      "node": "north_entry",
+      "location": {
+        "lat": 29.7593,
+        "lon": -95.3681
+      }
+    }
+  ],
+  "elevators": [
+    {
+      "id": "E1",
+      "label": "Elevator 1",
+      "car_depth_in": 60,
+      "car_width_in": 51,
+      "in_service": true
+    },
+    {
+      "id": "E2",
+      "label": "Elevator 2",
+      "car_depth_in": 80,
+      "car_width_in": 54,
+      "in_service": true
+    }
+  ],
+  "stairs": [
+    {
+      "id": "SB",
+      "label": "Stair B"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "east_entry",
+      "floor": 1,
+      "label": "East entrance"
+    },
+    {
+      "id": "north_entry",
+      "floor": 1,
+      "label": "North entrance"
+    },
+    {
+      "id": "lobby",
+      "floor": 1,
+      "label": "Lobby",
+      "checkpoint": true
+    },
+    {
+      "id": "E1_1",
+      "floor": 1,
+      "label": "Elevator 1"
+    },
+    {
+      "id": "E2_1",
+      "floor": 1,
+      "label": "Elevator 2"
+    },
+    {
+      "id": "SB_1",
+      "floor": 1,
+      "label": "Stair B"
+    },
+    {
+      "id": "E1_14",
+      "floor": 14,
+      "label": "Elevator 1",
+      "x": 2,
+      "y": 3.5
+    },
+    {
+      "id": "E2_14",
+      "floor": 14,
+      "label": "Elevator 2",
+      "x": 4.5,
+      "y": 3.5
+    },
+    {
+      "id": "SB_14",
+      "floor": 14,
+      "label": "Stair B",
+      "x": 3.5,
+      "y": 7.5
+    },
+    {
+      "id": "corr_w",
+      "floor": 14,
+      "label": "Corridor west",
+      "x": 3.5,
+      "y": 5.25
+    },
+    {
+      "id": "corr_e",
+      "floor": 14,
+      "label": "Corridor east",
+      "x": 36.5,
+      "y": 5.25
+    },
+    {
+      "id": "U1404",
+      "floor": 14,
+      "label": "Unit 1404",
+      "x": 36.5,
+      "y": 8.5,
+      "patient": true
+    }
+  ],
+  "edges": [
+    {
+      "from": "east_entry",
+      "to": "lobby",
+      "kind": "walk",
+      "distance_m": 12,
+      "overhead_s": [
+        15,
+        28
+      ],
+      "instruction": "Stage at the {entrance}; take the lobby door"
+    },
+    {
+      "from": "north_entry",
+      "to": "lobby",
+      "kind": "walk",
+      "distance_m": 30,
+      "overhead_s": [
+        20,
+        35
+      ],
+      "instruction": "Enter at the {entrance}; follow the service hall to the lobby"
+    },
+    {
+      "from": "lobby",
+      "to": "E2_1",
+      "kind": "walk",
+      "distance_m": 8,
+      "overhead_s": [
+        10,
+        24
+      ],
+      "instruction": "Lobby to {vertical}"
+    },
+    {
+      "from": "lobby",
+      "to": "E1_1",
+      "kind": "walk",
+      "distance_m": 6,
+      "overhead_s": [
+        10,
+        24
+      ],
+      "instruction": "Lobby to {vertical}"
+    },
+    {
+      "from": "lobby",
+      "to": "SB_1",
+      "kind": "walk",
+      "distance_m": 15,
+      "overhead_s": [
+        5,
+        10
+      ],
+      "instruction": "Lobby to {vertical}"
+    },
+    {
+      "from": "E1_1",
+      "to": "E1_14",
+      "kind": "elevator",
+      "elevator": "E1",
+      "floors": 13,
+      "instruction": "Ride to floor {floor}"
+    },
+    {
+      "from": "E2_1",
+      "to": "E2_14",
+      "kind": "elevator",
+      "elevator": "E2",
+      "floors": 13,
+      "instruction": "Ride to floor {floor}"
+    },
+    {
+      "from": "SB_1",
+      "to": "SB_14",
+      "kind": "stairs",
+      "stair": "SB",
+      "floors": 13,
+      "instruction": "Climb {vertical} to floor {floor}"
+    },
+    {
+      "from": "E1_14",
+      "to": "corr_w",
+      "kind": "walk",
+      "distance_m": 1,
+      "instruction": "Corridor east {distance} m to unit {unit}"
+    },
+    {
+      "from": "E2_14",
+      "to": "corr_w",
+      "kind": "walk",
+      "distance_m": 1,
+      "instruction": "Corridor east {distance} m to unit {unit}"
+    },
+    {
+      "from": "SB_14",
+      "to": "corr_w",
+      "kind": "walk",
+      "distance_m": 2,
+      "overhead_s": [
+        5,
+        10
+      ],
+      "instruction": "Corridor east {distance} m to unit {unit}"
+    },
+    {
+      "from": "corr_w",
+      "to": "corr_e",
+      "kind": "walk",
+      "distance_m": 33,
+      "instruction": "Corridor east {distance} m to unit {unit}"
+    },
+    {
+      "from": "corr_e",
+      "to": "U1404",
+      "kind": "walk",
+      "distance_m": 1,
+      "instruction": "Corridor east {distance} m to unit {unit}"
+    }
+  ],
+  "floor_plan": {
+    "floor": 14,
+    "width_m": 40,
+    "height_m": 10,
+    "rooms": [
+      {
+        "id": "elev",
+        "name": "Elevators",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 7.5,
+            "y": 0
+          },
+          {
+            "x": 7.5,
+            "y": 4
+          },
+          {
+            "x": 0,
+            "y": 4
+          }
+        ]
+      },
+      {
+        "id": "r1401",
+        "name": "1401",
+        "polygon": [
+          {
+            "x": 7.5,
+            "y": 0
+          },
+          {
+            "x": 18.0,
+            "y": 0
+          },
+          {
+            "x": 18.0,
+            "y": 4
+          },
+          {
+            "x": 7.5,
+            "y": 4
+          }
+        ]
+      },
+      {
+        "id": "r1402",
+        "name": "1402",
+        "polygon": [
+          {
+            "x": 18,
+            "y": 0
+          },
+          {
+            "x": 29,
+            "y": 0
+          },
+          {
+            "x": 29,
+            "y": 4
+          },
+          {
+            "x": 18,
+            "y": 4
+          }
+        ]
+      },
+      {
+        "id": "r1403",
+        "name": "1403",
+        "polygon": [
+          {
+            "x": 29,
+            "y": 0
+          },
+          {
+            "x": 40,
+            "y": 0
+          },
+          {
+            "x": 40,
+            "y": 4
+          },
+          {
+            "x": 29,
+            "y": 4
+          }
+        ]
+      },
+      {
+        "id": "corridor",
+        "name": "Corridor",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 4
+          },
+          {
+            "x": 40,
+            "y": 4
+          },
+          {
+            "x": 40,
+            "y": 6.5
+          },
+          {
+            "x": 0,
+            "y": 6.5
+          }
+        ]
+      },
+      {
+        "id": "stairb",
+        "name": "Stair B",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 6.5
+          },
+          {
+            "x": 7.5,
+            "y": 6.5
+          },
+          {
+            "x": 7.5,
+            "y": 10.0
+          },
+          {
+            "x": 0,
+            "y": 10.0
+          }
+        ]
+      },
+      {
+        "id": "r1405",
+        "name": "1405",
+        "polygon": [
+          {
+            "x": 7.5,
+            "y": 6.5
+          },
+          {
+            "x": 29.0,
+            "y": 6.5
+          },
+          {
+            "x": 29.0,
+            "y": 10.0
+          },
+          {
+            "x": 7.5,
+            "y": 10.0
+          }
+        ]
+      },
+      {
+        "id": "r1404",
+        "name": "1404",
+        "polygon": [
+          {
+            "x": 29,
+            "y": 6.5
+          },
+          {
+            "x": 40,
+            "y": 6.5
+          },
+          {
+            "x": 40,
+            "y": 10.0
+          },
+          {
+            "x": 29,
+            "y": 10.0
+          }
+        ]
+      }
+    ],
+    "doors": [
+      {
+        "id": "d_elev1",
+        "at": {
+          "x": 2,
+          "y": 4
+        },
+        "width_in": 36,
+        "kind": "elevator",
+        "elevator": "E1"
+      },
+      {
+        "id": "d_elev2",
+        "at": {
+          "x": 4.5,
+          "y": 4
+        },
+        "width_in": 42,
+        "kind": "elevator",
+        "elevator": "E2"
+      },
+      {
+        "id": "d_stairs",
+        "at": {
+          "x": 3.5,
+          "y": 6.5
+        },
+        "width_in": 36,
+        "kind": "stair",
+        "stair": "SB"
+      },
+      {
+        "id": "d_1404",
+        "at": {
+          "x": 36.5,
+          "y": 6.5
+        },
+        "width_in": 36,
+        "kind": "unit"
+      }
+    ]
+  },
+  "hazards_sample": [
+    {
+      "kind": "lane_closure",
+      "title": "Lane closure on approach street",
+      "source": "TxDOT DriveTexas (sample)",
+      "location": {
+        "lat": 29.7583,
+        "lon": -95.3668
+      }
+    },
+    {
+      "kind": "pothole",
+      "title": "Reported pothole near loading zone",
+      "source": "Houston 311 (sample)",
+      "location": {
+        "lat": 29.7588,
+        "lon": -95.3676
+      }
+    }
+  ],
+  "type": "Residential high-rise"
+}

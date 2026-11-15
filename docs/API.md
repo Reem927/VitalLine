@@ -1,219 +1,144 @@
 # VitalLine API
 
-Contract between the iOS app and the FastAPI backend. Version 1 matches what the app already sends and decodes (`ios/VitalLine/VitalLine/Services/APIClient.swift` and `Models/*.swift`). Version 1.1 fields are optional additions: the app ignores them until it adds matching properties.
-
-VitalLine is a decision aid, not a medical device. The crew makes the final call.
+Contract between the iOS app (`ios/VitalLine/VitalLine/Services/APIClient.swift`, `Models/*.swift`) and the FastAPI backend (`backend/app/main.py`). Prototype, not a medical device. All dispatches are synthetic.
 
 ## Base URL
 
-- Simulator: `http://localhost:8000`
-- Phone: the tunnel URL. Set `API.baseURL` in `APIClient.swift` and `API.useMock = false`.
+- Simulator: `http://localhost:8000` (set automatically in `APIClient.swift`).
+- Phone: a tunnel to port 8000; paste it into `API.baseURL` (device branch).
+- Start the backend: `cd backend && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0`. Docs at `/docs`.
 
 ## Conventions
 
-- JSON keys are `snake_case`. The app decodes them to camelCase.
-- Units: metres for floor-plan coordinates, inches for door widths (`width_in`), seconds for times, kilometres for road distance.
-- Floor-plan coordinates: origin at the top-left of the drawn area, `y` grows downward.
-- Every number comes from a tool (geometry code, Valhalla, Wolfram, CoStar, Matterport). If no tool returned it, the field is `null` and the item says so.
-- Anything simulated is labeled: `"source": "synthetic"`, `"synthetic": true`, or "(sample)" in a flag source.
-- v1.1: every request carries the header `X-Demo-Token`. The value lives in the backend `.env` and in the app's local build settings, never in git. Requests without it get `401`.
+- JSON keys are `snake_case`; the app decodes them to camelCase.
+- Every endpoint the app calls returns **200** (the client treats anything else as a failure).
+- Units: metres on the floor plan (origin top-left, y grows down), inches for doors and cars, seconds for indoor times, km and minutes outdoors.
+- Every number comes from code: the indoor graph, geometry, Valhalla, exact arithmetic / Wolfram. Missing data is `null` plus an entry in `unknowns`, never a guess.
+- Anything simulated is labelled (`source: "synthetic"`, `synthetic: true`, "(sample)").
+
+## App flow
+
+| App action | Call |
+|---|---|
+| Launch / pull to refresh | `POST /dispatch` → `dispatch` + `dispatch_id` |
+| Start Response | `POST /plan/start` (with `dispatch_id`), then poll `GET /plan/{job_id}` every 0.7 s |
+| Elevator toggle | `POST /plan/start` again with `elevator_out` flipped (location and outdoor reuse cached results) |
+| Timeline marks (en route, arrived, lobby, at patient) | `POST /dispatch/{id}/events` |
+| Completed → Yes / No | `POST /dispatch/{id}/complete` |
 
 ## Endpoints
 
 ### `POST /dispatch`
 
-The raw synthetic call. No agents run.
-
 Request (`PlanRequest`):
 
 ```json
-{ "scenario_id": "houston-demo", "elevator_out": false, "crew_location": { "lat": 29.757, "lon": -95.364 } }
+{"scenario_id": "houston-cardiac-14", "elevator_out": false, "crew_location": {"lat": 29.757, "lon": -95.364}}
 ```
 
-Response (`DispatchResponse`):
+`scenario_id`: `houston-demo` or `houston-cardiac-14` (alias). Unknown → `400`.
+
+Response:
 
 ```json
-{ "dispatch": { "address": "...", "floor": 2, "unit": "...", "complaint": "Cardiac arrest (synthetic call)",
-                "equipment": "stretcher", "priority": "High", "eta_minutes": null } }
+{"dispatch": {"address": "1200 Demo St, Houston, TX", "floor": 14, "unit": "1404",
+              "complaint": "Cardiac arrest (synthetic call)", "equipment": "stretcher",
+              "priority": "High", "eta_minutes": null},
+ "dispatch_id": "6f1c…"}
 ```
-
-`scenario_id` values: `houston-demo` (primary), `la-highrise` (alternate), `princeton-live` (on-site AR test). The app's current `houston-cardiac-14` is accepted as an alias for `houston-demo`.
 
 ### `POST /plan/start`
 
-Starts the six agents as one job. Same request body as `/dispatch`. Response:
-
-```json
-{ "job_id": "j_123" }
-```
+Same body as `/dispatch`, plus `"dispatch_id"` (optional; without it a new dispatch is created). Response: `{"job_id": "j_…", "dispatch_id": "…"}`.
 
 ### `GET /plan/{job_id}`
 
-The app polls this about every 0.7 s until `status` is not `running`.
-
 ```json
-{
-  "job_id": "j_123",
-  "status": "running",
-  "tasks": [ { "id": "location", "title": "Building lookup", "status": "done", "detail": "CoStar: 4 stories, residential" } ],
-  "building": null,
-  "outdoor": null,
-  "plan": null,
-  "error": null
-}
+{"job_id": "j_…", "status": "running | done | error",
+ "tasks": [{"id": "location", "title": "Building lookup", "status": "done", "detail": "Synthetic: Houston Residential Tower, 20 floors, residential high-rise"}, …],
+ "building": {…} | null, "outdoor": {…} | null, "plan": {…} | null, "error": null, "dispatch_id": "…"}
 ```
 
-- `status`: `running`, `done` or `error`.
-- `building` is filled once `location` is done, and `outdoor` once `outdoor` is done, so Route Preview can render early.
-- `plan` is filled only when `status` is `done`.
-- `error` is set when `status` is `error`. A Wolfram mismatch blocks the plan and returns `error`, never a partial plan.
+`building` appears once `location` is done and `outdoor` once `outdoor` is done (Route Preview renders early). `plan` appears only with `status: "done"`. `status: "error"` means the plan is blocked (no usable route, or verification mismatch); `error` says why. `404` for an unknown job.
 
-Task ids, in order. Each maps to one subagent:
+Tasks, in order, one subagent each:
 
-| id | Title | Subagent | Sources |
+| id | title | subagent | does |
 |---|---|---|---|
-| `location` | Building lookup | location-resolver | Geocode, CoStar property |
-| `outdoor` | Outdoor route | outdoor-route | Valhalla, TxDOT, Houston 311, NWS |
-| `access` | Access check | access-checker | Vexcel, building profile |
-| `indoor` | Indoor route | indoor-planner | Matterport scans, equipment fit |
-| `verify` | Wolfram verification | verifier | Wolfram |
-| `brief` | Crew brief | briefer | Tool results only |
+| `location` | Building lookup | location-resolver | Census geocode + building profile |
+| `outdoor` | Outdoor route | outdoor-route | Valhalla route crew → staging, road flags |
+| `access` | Access check | access-checker | parking the rig clears, best entrance |
+| `indoor` | Indoor route | indoor-planner | elevator/stairs, stretcher fit, steps and times |
+| `verify` | Wolfram verification | verifier | re-checks every time sum |
+| `brief` | Crew brief | briefer | 3–6 lines; numbers must exist in the results |
 
-Task `status`: `pending`, `running`, `done` or `failed`.
-
-### `POST /plan/start` with `elevator_out: true`
-
-The elevator toggle is a new job with the flag set. The backend reuses cached `location` and `outdoor` results, so those tasks finish at once.
-
-### `GET /plan/{job_id}/why?step={step_id}` (v1.1)
-
-The proof behind one step: the tool results it came from and the Wolfram check.
-
-```json
-{ "step_id": 3, "claims": [ { "text": "Doorway 0.75 m clears a 24 in stretcher", "tool": "geometry.door_fit",
-  "inputs": { "door_width_m": 0.75, "stretcher_width_in": 24 }, "result": "pass",
-  "wolfram": { "expression": "...", "result": "...", "match": true } } ] }
-```
-
-## Data models
+Task `status`: `pending | running | done | failed`.
 
 ### `Plan`
 
-| Field | Type | Notes |
-|---|---|---|
-| `dispatch` | DispatchInfo | Echo of the call |
-| `building` | Building | |
-| `outdoor` | Outdoor | |
-| `access` | [AccessNote] | |
-| `indoor` | Indoor | |
-| `steps` | [Step] | Ordered crew steps |
-| `time` | TimeRange | Door to patient, as a range |
-| `verification` | Verification | |
-| `brief` | [String] | Short crew brief, one line per item |
-| `unknowns` | [Unknown] | v1.1 |
-
-### `DispatchInfo`
-
-`address`, `floor` (int), `unit`, `complaint`, `equipment` (`stretcher`, `stair_chair` or `bariatric`), `priority` (optional), `eta_minutes` (optional).
-
-### `Building`
-
-`name`, `floors` (int, above grade), `type`, `source` (`CoStar` or `synthetic`).
-
-### `Outdoor`
-
-`route` ([LatLon]), `staging` (LatLon), `entrance` (LatLon), `flags` ([Flag]), `eta_minutes` (optional), `distance_km` (optional). The ETA is Valhalla's road estimate for a truck profile, not an ambulance response time.
-
-`Flag`: `id`, `kind` (`road_work`, `hazard`, `weather`, or other), `text`, `source`.
-
-### `AccessNote`
-
-`id`, `text`, `confidence` (`high`, `medium`, `low`, `unknown`), `synthetic` (bool).
-
-### `Indoor`
-
-v1 fields (one drawn floor):
-
-| Field | Type | Notes |
-|---|---|---|
-| `floor` | int | Building floor shown |
-| `width_m`, `height_m` | number | Drawn area size |
-| `rooms` | [Room] | `id`, `name`, `polygon` ([PlanPoint]) |
-| `doors` | [Door] | `id`, `at` (PlanPoint), `width_in`, `passable` |
-| `path` | [PlanPoint] | Route on the drawn floor |
-| `mode` | string | `stretcher` or `stair_chair` |
-| `elevator_ok` | bool | False when out of service or the car fit fails |
-| `floor_plan_image_url` | string, optional | Matterport floor-plan image for the drawn floor |
-
-v1.1 additions:
-
-`Door` gains:
-
-| Field | Type | Notes |
-|---|---|---|
-| `confidence` | string | `high` (measured), `medium` (scanner default size), `low` (code minimum) |
-| `measured` | bool | False when the width is a default or assumed value |
-| `source` | string | For example `matterport` or `assumed: code minimum` |
-
-`Indoor` gains `legs`, the whole route from entrance to patient across scans:
+Matches `Models.swift`. Example (stretcher):
 
 ```json
-"legs": [
-  { "id": "L1", "kind": "scan", "label": "Entrance to stairs and elevator", "real": true,
-    "scan_ref": "concierge", "floor_label": "Floor 1",
-    "waypoints": [ { "x": 1.2, "y": 3.4, "z": 0.0 } ],
-    "pano_ids": [ "..." ] },
-  { "id": "L2", "kind": "elevator", "label": "Elevator to floor 2", "real": false,
-    "from_floor": 1, "to_floor": 2, "expected_climb_m": null, "climb_source": "assumed floor height" },
-  { "id": "L3", "kind": "corridor_gap", "label": "Corridor to unit door not scanned", "real": false,
-    "distance_m": null },
-  { "id": "L4", "kind": "scan", "label": "Unit door to patient", "real": true, "scan_ref": "unit",
-    "waypoints": [ { "x": 0.5, "y": 0.8, "z": 0.0 } ] }
-]
+{
+  "dispatch": {…DispatchInfo, "equipment": "stretcher", "eta_minutes": 2},
+  "building": {"name": "Houston Residential Tower", "floors": 20, "type": "Residential high-rise", "source": "synthetic"},
+  "outdoor": {"route": [{"lat": …, "lon": …}], "staging": {…}, "entrance": {…},
+              "flags": [{"id": "f1", "kind": "road_work", "text": "Lane closure on approach street", "source": "TxDOT DriveTexas (sample)"}],
+              "eta_minutes": 2, "distance_km": 0.7},
+  "access": [{"id": "a1", "text": "Park: Garage A (Level 1), 11 ft clearance", "confidence": "medium", "synthetic": true}],
+  "indoor": {"floor": 14, "width_m": 40, "height_m": 10, "rooms": [{"id", "name", "polygon": [{"x", "y"}]}],
+             "doors": [{"id": "d_elev2", "at": {"x": 4.5, "y": 4}, "width_in": 42, "passable": true}],
+             "path": [{"x": 4.5, "y": 3.5}, …, {"x": 36.5, "y": 8.5}], "mode": "stretcher", "elevator_ok": true,
+             "floor_plan_image_url": null},
+  "steps": [{"id": 1, "text": "Stage at the east entrance; take the lobby door", "seconds_min": 30, "seconds_max": 45},
+            {"id": 2, "text": "Lobby to Elevator 2 (stretcher fits: 80 x 54 in car)", "seconds_min": 20, "seconds_max": 35},
+            {"id": 3, "text": "Ride to floor 14", "seconds_min": 60, "seconds_max": 100},
+            {"id": 4, "text": "Corridor east 35 m to unit 1404", "seconds_min": 46, "seconds_max": 48}],
+  "time": {"min_seconds": 157, "max_seconds": 228},
+  "verification": {"verified": true, "verified_by": "wolfram | local_exact_arithmetic",
+                   "expression": "12/0.73+28+…", "result": "227.342 s",
+                   "checks": [{"id": "c1", "what": "Step 1 min", "python": "30.789", "wolfram": null, "claimed": 30, "match": true}]},
+  "brief": ["Park at Garage A (Level 1).", "…", "Door to patient 2.6–3.8 min with stretcher."],
+  "unknowns": [{"id": "u1", "what": "Elevator status", "why": "No live building feed", "handled_as": "…", "confidence": "unknown"}],
+  "meta": {"run_id", "mode": "agents | deterministic | deterministic_fallback", "reason", "brief_source", "dispatch_id", "version", "filled_by_rules": []}
+}
 ```
 
-- `kind`: `scan` (real scan data), `elevator`, `stairs`, `corridor_gap` or `outdoor`.
-- `real: false` legs are modeled or unknown. The app should say so on screen.
-- `waypoints` are in that scan's own metre coordinates (x, y, z up). Each scan has its own frame; legs are not in one shared frame.
-- `scan_ref` names a scan in the backend config. The 3D viewer model id is sent at runtime only. It is never stored in git.
-- `expected_climb_m` lets the app confirm the elevator ride with the barometer (`CMAltimeter`). `null` when unknown.
+With `elevator_out: true` all elevators are treated as out: Stair B with a stair chair, 337–475 s, `mode: "stair_chair"`, `elevator_ok: false`.
 
-### `Step`
+The app shows "Verified by Wolfram" only when `verified_by` is `wolfram` (needs `WOLFRAM_API_KEY`); otherwise "Math checked".
 
-`id` (int), `text`, `seconds_min`, `seconds_max`.
+### `POST /dispatch/{id}/events`
 
-### `TimeRange`
+`{"kind": "en_route | arrived_at_building | entered_lobby | at_patient", "at": "2026-11-14T16:31:12Z"}` → `{"recorded": true, "seq": 7}`. Each kind is recorded once per dispatch.
 
-`min_seconds`, `max_seconds`.
+### `POST /dispatch/{id}/complete`
 
-### `Verification`
+`{"save": true}` → `{"saved": true, "access": {"predicted_min": [2.6, 3.8], "actual_min": 6.6, "actual_basis": "from arrived building to at patient", "within_prediction": false}}`. Predicted is the first plan; actual is arrival (building or lobby) → at patient, or `null` with the reason.
 
-v1: `verified` (bool), `expression`, `result`.
+### History and trace
 
-v1.1 adds `checks`: one entry per verified number.
+| Endpoint | Returns |
+|---|---|
+| `GET /history` | saved dispatches `[{dispatch_id, title, address, created_at}]` |
+| `GET /history/{id}` | title, subtitle, timestamped timeline (warning rows for route updates), predicted vs actual |
+| `GET /dispatch/{id}/events?after_seq=N` | every log row: `{seq, occurred_at, actor, type, summary, payload, trace_id, prev_hash, hash}` |
+| `GET /dispatch/{id}/events/stream` | the same rows live as server-sent events; ends after `completed` |
+| `GET /dispatch/{id}/events/verify` | `{"intact": true}` if the hash chain is unbroken |
+| `GET /health` | agents on/off, model, store, Wolfram, offline |
 
-```json
-"checks": [ { "id": "c1", "what": "Total path length", "python": "41.2", "wolfram": "41.2", "match": true } ]
-```
+Event types: `dispatch_received`, `plan_started`, `plan_step` (per task, `running` then `done`/`failed`, actor = subagent), `plan_ready`, `condition_reported`, `route_updated`, `plan_blocked`, `agent_error`, `acknowledged`, `arrived_building`, `entered_lobby`, `at_patient`, `completed`. The log is append-only (database triggers) and hash-chained. `trace_id` holds the LangSmith trace when tracing is on.
 
-## Unknowns and confidence
+## Data sources
 
-v1.1 `Unknown`:
-
-```json
-{ "id": "u1", "what": "Elevator car interior size", "why": "Not in CoStar or the scans",
-  "handled_as": "Assumed code minimum for stretcher fit", "confidence": "low" }
-```
-
-Rules the backend follows:
-
-- "Unknown" is a valid answer. The backend never fills a gap with an invented number.
-- Door widths of exactly 36 x 80 in from the scanner are treated as default values, not measurements (`confidence: medium`).
-- Stretcher fit checks the doorway width and the turn into the next hallway. Wolfram verifies the turn calculation.
+| Data | Source | Fallback (labelled) |
+|---|---|---|
+| Geocoding | US Census Geocoder | building fixture coordinates |
+| Drive route | Valhalla / OSM (`VALHALLA_URL`, public instance default) | straight line × 1.4 at 30 km/h, `confidence: low` |
+| Road flags | sample rows labelled TxDOT DriveTexas / Houston 311 | — |
+| Building | `data/synthetic/demo_tower.json` | — |
+| Math check | exact arithmetic + Wolfram Short Answers (`WOLFRAM_API_KEY`) | exact arithmetic only |
 
 ## Errors
 
-- `400`: bad request body or unknown `scenario_id`.
-- `401` (v1.1): missing or wrong `X-Demo-Token`.
-- `404`: unknown `job_id`.
-- `200` with `"status": "error"`: planning failed or Wolfram blocked the plan. `error` explains why in plain words.
+`400` unknown `scenario_id`, `404` unknown job or dispatch, `422` invalid body, `200` + `"status": "error"` when a plan is blocked.

@@ -28,12 +28,14 @@ struct CompletionView: View {
 
             Button("Yes") {
                 if let plan = store.plan { history.save(plan, events: store.events) }
+                store.complete(save: true)
                 router.popToRoot()
                 router.selectedTab = .history
             }
             .buttonStyle(PrimaryButtonStyle())
 
             Button("No") {
+                store.complete(save: false)
                 router.popToRoot()
             }
             .buttonStyle(SecondaryButtonStyle())

@@ -103,11 +103,15 @@ struct IndoorPlanView: View {
                         StepsView(steps: plan.steps).card()
                     }
                 }
+Button("AR Navigation") {
+    router.push(.arNavigation)
+}
+.buttonStyle(PrimaryButtonStyle())
 
-                Button("Arrived at Patient") {
-                    store.markAtPatient()
-                    router.push(.completed)
-                }
+Button("Arrived at Patient") {
+    store.markAtPatient()
+    router.push(.completed)
+}
                     .buttonStyle(PrimaryButtonStyle())
             }
             .padding()
@@ -118,13 +122,13 @@ struct IndoorPlanView: View {
     }
 }
 
-struct ARNavigationView: View {
-    var body: some View {
-        Text("AR navigation (optional idea)")
-            .foregroundStyle(.textSecondary)
-            .vitalScreen()
-    }
-}
+//struct ARNavigationView: View {
+//    var body: some View {
+//        Text("AR navigation (optional idea)")
+//            .foregroundStyle(.textSecondary)
+//            .vitalScreen()
+//    }
+//}
 
 struct SettingsView: View {
     var body: some View {

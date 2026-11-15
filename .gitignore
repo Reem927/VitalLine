@@ -100,3 +100,7 @@ models_index.csv
 
 # Local demo config with sponsor identifiers: never commit
 *.local.json
+
+# Local event store
+data/vitalline.db
+data/*.db-journal

@@ -33,7 +33,8 @@ struct HeaderCard: View {
                       systemImage: isStairChair ? "figure.stairs" : "bed.double.fill")
                     .font(.subheadline.bold())
                 Spacer()
-                VerifiedBadge(verified: plan.verification.verified)
+                VerifiedBadge(verified: plan.verification.verified,
+                              by: plan.verification.verifiedBy)
             }
         }
         .card()
@@ -43,10 +44,15 @@ struct HeaderCard: View {
 
 struct VerifiedBadge: View {
     let verified: Bool
+    var by: String? = nil          // nil (mock) or "wolfram" -> Wolfram; otherwise local math
+
+    private var verifiedText: String {
+        by == nil || by == "wolfram" ? "Verified by Wolfram" : "Math checked"
+    }
 
     var body: some View {
         let color: Color = verified ? .success : .caution
-        Label(verified ? "Verified by Wolfram" : "Not verified",
+        Label(verified ? verifiedText : "Not verified",
               systemImage: verified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
             .font(.caption.bold())
             .padding(.horizontal, 10)

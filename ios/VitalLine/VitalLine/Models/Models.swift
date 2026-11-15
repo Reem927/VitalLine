@@ -113,11 +113,13 @@ struct Verification: Codable {
     let verified: Bool
     let expression: String
     let result: String
+    let verifiedBy: String?        // "wolfram" | "local_exact_arithmetic"; nil in mock data
 }
 
 // What POST /dispatch returns: the raw call from 911/CAD. No agents have run yet.
 struct DispatchResponse: Codable {
     let dispatch: DispatchInfo
+    let dispatchId: String?        // backend id for this call; nil in mock data
 }
 
 // What the app sends to POST /dispatch and POST /plan/start.
@@ -125,4 +127,15 @@ struct PlanRequest: Codable {
     let scenarioId: String
     let elevatorOut: Bool
     let crewLocation: LatLon?      // where the rig is; outdoor-route starts here
+    var dispatchId: String? = nil  // links a plan job to the call from POST /dispatch
+}
+
+// POST /dispatch/{id}/events and /complete
+struct CrewEventRequest: Codable {
+    let kind: String
+    let at: String                 // ISO 8601
+}
+
+struct CompleteRequest: Codable {
+    let save: Bool
 }
