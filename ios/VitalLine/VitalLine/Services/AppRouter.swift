@@ -34,7 +34,7 @@ final class AppRouter {
 
 // One saved response, shown in the History tab.
 struct HistoryEntry: Identifiable {
-    let id = UUID()
+    var id = UUID().uuidString     // the backend's dispatch id when known
     let plan: Plan
     let events: [ResponseEvent]
     let crewUnit: String
@@ -50,14 +50,57 @@ struct HistoryEntry: Identifiable {
     }
 }
 
-// In-memory history (resets when the app restarts; fine for the demo).
+// Saved responses. With the live backend they come from GET /history/full (stored in
+// Supabase), so they survive app restarts. A response saved a moment ago is shown at once
+// and replaced by the backend's copy on the next refresh.
 // Read it with: @Environment(HistoryStore.self) private var history
 @MainActor
 @Observable
 final class HistoryStore {
     var entries: [HistoryEntry] = []
+    var loadError: String?
 
-    func save(_ plan: Plan, events: [ResponseEvent]) {
-        entries.insert(HistoryEntry(plan: plan, events: events, crewUnit: Crew.unit), at: 0)
+    func save(_ plan: Plan, events: [ResponseEvent], dispatchId: String?) {
+        entries.insert(HistoryEntry(id: dispatchId ?? UUID().uuidString, plan: plan,
+                                    events: events, crewUnit: Crew.unit), at: 0)
+    }
+
+    func refresh() async {
+        guard !API.useMock else { return }
+        do {
+            let saved = try await API.savedHistory().map(Self.entry)
+            let known = Set(saved.map(\.id))
+            entries = entries.filter { !known.contains($0.id) } + saved   // keep just-saved ones
+            entries.sort { $0.date > $1.date }
+            loadError = nil
+        } catch {
+            loadError = "Could not load saved responses."
+        }
+    }
+
+    private static func entry(_ record: API.HistoryRecord) -> HistoryEntry {
+        let kinds: [String: ResponseEvent.Kind] = [
+            "dispatch_received": .dispatchReceived, "acknowledged": .enRoute,
+            "arrived_building": .arrivedAtBuilding, "entered_lobby": .enteredLobby,
+            "route_updated": .routeUpdated, "at_patient": .atPatient,
+        ]
+        let events = record.events.compactMap { row -> ResponseEvent? in
+            guard let kind = kinds[row.type], let date = parseDate(row.occurredAt) else { return nil }
+            return ResponseEvent(kind: kind, date: date, text: row.text)
+        }
+        return HistoryEntry(id: record.dispatchId, plan: record.plan, events: events,
+                            crewUnit: record.crewUnit ?? Crew.unit)
+    }
+
+    // Backend timestamps are ISO 8601, with or without fractional seconds.
+    private static func parseDate(_ text: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: text) { return date }
+        let plain = ISO8601DateFormatter()
+        if let date = plain.date(from: text) { return date }
+        // Drop the fraction and try again (e.g. six-digit microseconds).
+        let trimmed = text.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
+        return plain.date(from: trimmed)
     }
 }

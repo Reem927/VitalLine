@@ -13,15 +13,23 @@ struct ContentView: View {
     @State private var store = PlanStore()
     @State private var router = AppRouter()
     @State private var history = HistoryStore()
+    @State private var auth = AuthStore()
 
     var body: some View {
-        Tabs()
-            .environment(store)
-            .environment(router)
-            .environment(history)
-            .preferredColorScheme(.dark)
-            .tint(.brandPrimary)
-            .task { await store.load() }
+        Group {
+            if auth.isSignedIn {
+                Tabs().task { await store.load() }
+            } else {
+                LoginView()
+            }
+        }
+        .environment(store)
+        .environment(router)
+        .environment(history)
+        .environment(auth)
+        .preferredColorScheme(.dark)
+        .tint(.brandPrimary)
+        .task { await auth.checkBackend() }
     }
 }
 

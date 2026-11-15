@@ -2,14 +2,60 @@ import Foundation
 
 enum API {
     // useMock = true runs the app on MockData with no backend.
-    // Simulator: talks to the backend on this Mac (cd backend && .venv/bin/uvicorn app.main:app).
-    // Phone: paste the tunnel URL below.
+    // Simulator: talks to the backend on this Mac (scripts/run_backend.sh) unless Settings says otherwise.
+    // Phone: paste the tunnel address and demo token in Settings > Backend (scripts/run_tunnel.sh prints them).
     static let useMock = false
     #if targetEnvironment(simulator)
-    static let baseURL = URL(string: "http://localhost:8000")!
+    static let defaultBaseURL = "http://localhost:8000"
     #else
-    static let baseURL = URL(string: "https://YOUR-TUNNEL-URL.trycloudflare.com")!
+    static let defaultBaseURL = ""
     #endif
+
+    static var baseURL: URL {
+        let saved = (UserDefaults.standard.string(forKey: "backendURL") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = saved.isEmpty ? defaultBaseURL : saved
+        if !text.isEmpty, !text.contains("://") { text = "https://" + text }
+        while text.hasSuffix("/") { text.removeLast() }
+        return URL(string: text) ?? URL(string: "http://localhost:8000")!
+    }
+
+    static var isConfigured: Bool {
+        !defaultBaseURL.isEmpty || !(UserDefaults.standard.string(forKey: "backendURL") ?? "").isEmpty
+    }
+
+    // Adds the shared demo token, when one is set in Settings.
+    static func authorized(_ request: URLRequest) -> URLRequest {
+        var request = request
+        let token = (UserDefaults.standard.string(forKey: "demoToken") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !token.isEmpty { request.setValue(token, forHTTPHeaderField: "X-Demo-Token") }
+        if let session = UserDefaults.standard.string(forKey: AuthStore.tokenKey) {
+            request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+
+    // Settings > Test connection. Returns a short line to show the user.
+    static func testConnection() async -> String {
+        guard isConfigured else { return "Enter the backend address first." }
+        do {
+            var health = URLRequest(url: baseURL.appendingPathComponent("health"))
+            health.timeoutInterval = 10
+            let (_, r1) = try await URLSession.shared.data(for: health)
+            guard (r1 as? HTTPURLResponse)?.statusCode == 200 else { return "Backend did not answer correctly." }
+            var check = authorized(URLRequest(url: baseURL.appendingPathComponent("history")))
+            check.timeoutInterval = 10
+            let (_, r2) = try await URLSession.shared.data(for: check)
+            switch (r2 as? HTTPURLResponse)?.statusCode {
+            case 200: return "Connected."
+            case 401: return "Backend reached, but the demo token is wrong or missing."
+            default: return "Backend reached, but it returned an error."
+            }
+        } catch {
+            return "Could not reach the backend: \(error.localizedDescription)"
+        }
+    }
     // Picked in Settings: "houston-cardiac-14" (demo building) or "princeton-live" (on-site AR test).
     static var scenarioId: String {
         UserDefaults.standard.string(forKey: "scenarioId") ?? "houston-cardiac-14"
@@ -144,10 +190,74 @@ enum API {
     }
 
     private static func send(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: authorized(request))
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
         return data
+    }
+
+    // MARK: Sign-in (POST /auth/login, /auth/signup) and saved history (GET /history/full)
+
+    struct AuthSession: Decodable { let email: String; let token: String }
+    struct AuthFailure: Error { let message: String }
+    struct Health: Decodable { let ok: Bool; let auth: Bool?; let tokenRequired: Bool? }
+    private struct AuthBody: Encodable { let email: String; let password: String; let teamCode: String? }
+    private struct ErrorBody: Decodable { let detail: String }
+    private struct Empty: Encodable {}
+
+    static func health() async -> Health? {
+        guard isConfigured else { return nil }
+        var request = URLRequest(url: baseURL.appendingPathComponent("health"))
+        request.timeoutInterval = 8
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+        return try? decode(Health.self, from: data)
+    }
+
+    static func sessionIsValid() async -> Bool? {
+        var request = authorized(URLRequest(url: baseURL.appendingPathComponent("auth/me")))
+        request.timeoutInterval = 8
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let code = (response as? HTTPURLResponse)?.statusCode else { return nil }
+        return code == 200 ? true : (code == 401 ? false : nil)
+    }
+
+    static func signIn(email: String, password: String, teamCode: String?,
+                       create: Bool) async -> Result<AuthSession, AuthFailure> {
+        guard isConfigured else { return .failure(AuthFailure(message: "Enter the backend address first.")) }
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        var request = URLRequest(url: baseURL.appendingPathComponent(create ? "auth/signup" : "auth/login"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try? encoder.encode(AuthBody(email: email, password: password, teamCode: teamCode))
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if (response as? HTTPURLResponse)?.statusCode == 200,
+               let session = try? decode(AuthSession.self, from: data) {
+                return .success(session)
+            }
+            let detail = (try? decode(ErrorBody.self, from: data))?.detail
+            return .failure(AuthFailure(message: detail ?? "Sign-in failed."))
+        } catch {
+            return .failure(AuthFailure(message: "Could not reach the backend. Check the address."))
+        }
+    }
+
+    static func signOut() async {
+        _ = try? await post("auth/logout", body: Empty())
+    }
+
+    struct HistoryRecord: Decodable {
+        struct Row: Decodable { let type: String; let occurredAt: String; let text: String }
+        let dispatchId: String
+        let crewUnit: String?
+        let plan: Plan
+        let events: [Row]
+    }
+
+    static func savedHistory() async throws -> [HistoryRecord] {
+        try decode([HistoryRecord].self, from: try await get("history/full"))
     }
 }
