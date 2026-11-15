@@ -10,9 +10,9 @@ struct Plan: Codable {
     let building: Building
     let outdoor: Outdoor
     let access: [AccessNote]
-    let indoor: Indoor
-    let steps: [Step]
-    let time: TimeRange
+    var indoor: Indoor
+    var steps: [Step]
+    var time: TimeRange
     let verification: Verification
     let brief: [String]
 }
@@ -132,7 +132,22 @@ struct Door: Codable, Identifiable {
     let id: String
     let at: PlanPoint
     let widthIn: Double
-    let passable: Bool
+    var passable: Bool
+    let between: String?           // rooms on each side, e.g. "Kitchen / Hallway"
+    let opening: String?           // "doorway" | "opening" | "divider"
+    let measured: Bool?            // false when the width is the scanner's default size
+    let confidence: String?        // "high" | "medium" | "low"
+    let fits: [String: String]?    // per equipment: "pass" | "fail" | "unknown" (width and turn)
+    let blockedBy: [String: String]?   // per equipment that fails: "too narrow" | "turn too tight"
+}
+
+// The same call with every elevator out, computed with the plan so the app can switch at once.
+struct IndoorVariant: Codable {
+    let mode: String
+    let elevatorOk: Bool
+    let steps: [Step]
+    let time: TimeRange
+    let legs: [Leg]
 }
 
 struct Indoor: Codable {
@@ -140,15 +155,16 @@ struct Indoor: Codable {
     let widthM: Double
     let heightM: Double
     let rooms: [Room]
-    let doors: [Door]
+    var doors: [Door]
     let path: [PlanPoint]
-    let mode: String               // "stretcher" | "stair_chair"
-    let elevatorOk: Bool
+    var mode: String               // "stretcher" | "stair_chair"
+    var elevatorOk: Bool
     let floorPlanImageUrl: String? // optional: CoStar/Matterport floor plan image
     let wallHeightM: Double?       // scanned ceiling height, for the 3D view
     let path3d: [Point3]?          // path in the plan frame, for the 3D view
     let arRoute: [Point3]?         // path in the AR frame, for AR navigation
-    let legs: [Leg]?
+    var legs: [Leg]?
+    let elevatorOutVariant: IndoorVariant?   // nil when the building has no elevator route
     let meshUrl: String?           // backend path of the real scan mesh manifest, if any
     let nav: Nav?                  // walkable graph for live AR re-routing, if the scan has one
     let lobbyWalk: LobbyWalk?      // the entrance scan, walked before the unit in the walkthrough

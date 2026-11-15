@@ -13,6 +13,7 @@ struct IndoorPlanView: View {
     @State private var showFloorPlan = false
     @State private var page = 0            // 0 = outside (aerial), 1 = inside (scan)
     @State private var showWalkthrough = false
+    @State private var fitFor = "stretcher"   // equipment checked on the Floor Plan page
 
     var body: some View {
         ScrollView {
@@ -23,12 +24,7 @@ struct IndoorPlanView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if store.isPlanning {
-                    Label("Agents re-planning…", systemImage: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.caution)
-                }
-
-                if let plan = store.plan {
+                if let plan = store.shownPlan {
                     if showFloorPlan { floorPlan(plan) } else { recommended(plan) }
                 } else {
                     ProgressView("Plan still building…").tint(.brandPrimary)
@@ -45,7 +41,7 @@ struct IndoorPlanView: View {
 
     @ViewBuilder
     private func recommended(_ plan: Plan) -> some View {
-        if !preview { ElevatorToggle() }
+        if !preview, plan.indoor.elevatorOutVariant != nil { ElevatorToggle() }
 
         if let aerial = plan.outdoor.aerial {
             // Slide between the outside view (where to stop) and the inside view (the route).
@@ -117,28 +113,78 @@ struct IndoorPlanView: View {
 
     // MARK: - Floor plan (2D)
 
+    // Doors recoloured for the equipment picked on this page.
+    private func doors(_ plan: Plan) -> [Door] {
+        plan.indoor.doors.map { door in
+            var d = door
+            if let fit = door.fits?[fitFor] { d.passable = fit == "pass" }
+            return d
+        }
+    }
+
     @ViewBuilder
     private func floorPlan(_ plan: Plan) -> some View {
-        FloorPlanCanvas(indoor: plan.indoor, showsPath: false)
-            .frame(height: 420)
+        let checked = doors(plan)
+        let fitting = checked.filter(\.passable).count
+        let name = fitFor == "stair_chair" ? "stair chair" : "stretcher"
+
+        Picker("Check fit for", selection: $fitFor) {
+            Text("Stretcher").tag("stretcher")
+            Text("Stair chair").tag("stair_chair")
+        }
+        .pickerStyle(.segmented)
+
+        FloorPlanCanvas(indoor: { var i = plan.indoor; i.doors = checked; return i }(),
+                        showsPath: false, showsDoors: true)
+            .frame(height: 380)
             .card()
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Floor \(plan.indoor.floor) · \(plan.indoor.doors.count) doors")
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(fitting) of \(checked.count) doors fit the \(name)")
                 .font(.headline).foregroundStyle(.textPrimary)
-            Text("Green fits the \(equipmentName(plan)), red does not. Widths are from the scan; "
-                 + "the crew decides the route.")
+            Text("Checked for door width and the turn into the next room. Numbers on the plan are door widths in inches. The crew decides the route.")
                 .font(.caption).foregroundStyle(.textSecondary)
-            ForEach(plan.indoor.doors.sorted { $0.widthIn < $1.widthIn }.prefix(6)) { door in
-                HStack {
+        }
+        .card()
+
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Doors on floor \(plan.indoor.floor)").font(.headline).foregroundStyle(.textPrimary)
+            ForEach(checked.sorted { ($0.passable ? 1 : 0, $0.widthIn) < ($1.passable ? 1 : 0, $1.widthIn) }) { door in
+                HStack(alignment: .top, spacing: 10) {
                     Image(systemName: door.passable ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(door.passable ? .success : .critical)
-                    Text(String(format: "%.0f in door", door.widthIn)).foregroundStyle(.textPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(door.between ?? "Door").font(.subheadline).foregroundStyle(.textPrimary)
+                        Text(detail(door))
+                            .font(.caption).foregroundStyle(.textSecondary)
+                    }
                     Spacer()
+                    Text(String(format: "%.0f in", door.widthIn))
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.textPrimary)
                 }
-                .font(.subheadline)
             }
         }
         .card()
+
+        let unknowns = (plan.indoor.legs ?? []).filter { !$0.real }
+        if !unknowns.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Not in the scan data", systemImage: "questionmark.circle")
+                    .font(.headline).foregroundStyle(.caution)
+                ForEach(unknowns) { leg in
+                    Text(leg.text).font(.footnote).foregroundStyle(.textPrimary)
+                }
+            }
+            .card()
+        }
+    }
+
+    private func detail(_ door: Door) -> String {
+        var parts: [String] = []
+        if let why = door.blockedBy?[fitFor], !door.passable { parts.append(why) }
+        if let measured = door.measured { parts.append(measured ? "measured in the scan" : "default size, not measured") }
+        if let kind = door.opening, kind != "doorway" { parts.append("open passage") }
+        return parts.isEmpty ? "width from the scan" : parts.joined(separator: " · ")
     }
 
     private func equipmentName(_ plan: Plan) -> String {

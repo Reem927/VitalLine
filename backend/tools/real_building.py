@@ -24,6 +24,7 @@ from typing import Any
 from app.config import demo_config
 from connectors import cache, costar_kit, matterport
 from geometry import scan_graph
+from rules import equipment as equipment_rules
 from rules.equipment import CODE_MIN_CAR_IN, EQUIPMENT, INCH_M
 from tools.wolfram import _run
 
@@ -59,9 +60,26 @@ def _floor_plan(sg, path: dict, floor: int) -> tuple[dict, list[dict]]:
 
     rooms = [{"id": r.id, "name": r.label, "polygon": [tf(x, y) for x, y in list(r.polygon.exterior.coords)[:-1]]}
              for r in polys]
-    doors = [{"id": d.id, "at": tf(d.x, d.y), "width_in": round(d.width_m / INCH_M, 1), "kind": "door",
-              "confidence": d.confidence, "measured": d.measured, "source": d.source}
-             for d in sg.doors.values() if d.floor_id in {r.floor_id for r in polys}]
+    def fit(door) -> tuple[dict, dict]:
+        """Per equipment: does it pass this door, and if not, what stops it."""
+        fits, blocked = {}, {}
+        for name in EQUIPMENT:
+            chk = scan_graph.door_checks(sg, door, equipment_rules.get(name))
+            fits[name] = chk["status"]
+            if chk["status"] == "fail":
+                blocked[name] = "too narrow" if not chk["width_check"]["passes"] else "turn too tight"
+        return fits, blocked
+
+    doors = []
+    for d in sg.doors.values():
+        if d.floor_id not in {r.floor_id for r in polys}:
+            continue
+        fits, blocked = fit(d)
+        names = [sg.rooms[r].label for r in d.rooms if r in sg.rooms]
+        doors.append({"id": d.id, "at": tf(d.x, d.y), "width_in": round(d.width_m / INCH_M, 1),
+                      "kind": "door", "confidence": d.confidence, "measured": d.measured,
+                      "source": d.source, "between": " / ".join(names) or None,
+                      "opening": d.kind, "fits": fits, "blocked_by": blocked})
     heights = sorted(h for h in (sg.room_heights or []) if h)
     fp = {"floor": floor, "width_m": round(max(xs) - minx, 2), "height_m": round(maxy - min(ys), 2),
           "rooms": rooms, "doors": doors,
@@ -181,7 +199,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("real_building", BUILDING_ID, 8)
+    key = cache.key_for("real_building", BUILDING_ID, 9)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))

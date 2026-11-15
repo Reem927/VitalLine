@@ -53,6 +53,7 @@ final class PlanStore {
         building = nil
         outdoor = nil
         plan = nil
+        elevatorOut = false
         await runAgents(cached: false)
     }
 
@@ -63,6 +64,27 @@ final class PlanStore {
                                            : "Route updated: elevator back in service")
         }
         await runAgents(cached: true)
+    }
+
+    // The plan as shown. With the elevator switch on, this is the stairs route the backend
+    // computed and verified together with the plan: no new agent run is needed.
+    var shownPlan: Plan? {
+        guard var p = plan else { return nil }
+        if elevatorOut, let v = p.indoor.elevatorOutVariant {
+            p.indoor.mode = v.mode
+            p.indoor.elevatorOk = v.elevatorOk
+            p.indoor.legs = v.legs
+            p.steps = v.steps
+            p.time = v.time
+        }
+        return p
+    }
+
+    func elevatorToggled() {
+        if events.contains(where: { $0.kind == .enRoute }) {
+            log(.routeUpdated, elevatorOut ? "Route updated: elevator unavailable, stairs used"
+                                           : "Route updated: elevator back in service")
+        }
     }
 
     // MARK: Timeline marks (each recorded once per response)

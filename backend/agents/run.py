@@ -296,7 +296,10 @@ class PlanRun:
             "floor": fp["floor"], "width_m": fp["width_m"], "height_m": fp["height_m"],
             "rooms": fp["rooms"],
             "doors": [{"id": d["id"], "at": d["at"], "width_in": d["width_in"],
-                       "passable": passable(d)} for d in fp["doors"]],
+                       "passable": passable(d),
+                       **{k: d[k] for k in ("between", "opening", "measured", "confidence",
+                                            "fits", "blocked_by") if k in d}}
+                      for d in fp["doors"]],
             "path": path,
             "mode": route.equipment.key,
             "elevator_ok": used_elevator,
@@ -311,10 +314,30 @@ class PlanRun:
             "legs": [{"id": s.index, "kind": s.kind, "text": s.text, "real": _is_real(s.text, s.kind)}
                      for s in route.steps],
         }
-        steps = [{"id": s.index, "text": s.text, "seconds_min": math.floor(s.seconds[0]),
-                  "seconds_max": math.ceil(s.seconds[1])} for s in route.steps]
+        def step_rows(r: IndoorRoute) -> list[dict]:
+            return [{"id": s.index, "text": s.text, "seconds_min": math.floor(s.seconds[0]),
+                     "seconds_max": math.ceil(s.seconds[1])} for s in r.steps]
+
+        steps = step_rows(route)
         lo, hi = route.total_seconds
         time = {"min_seconds": math.floor(lo), "max_seconds": math.ceil(hi)}
+
+        # The same call with every elevator out, computed now so the app can switch between
+        # the two routes at once. Its totals are checked in the verify step as well.
+        indoor["elevator_out_variant"] = None
+        self._alt_route = None
+        if used_elevator:
+            try:
+                alt = self.graph.best_route(set(self.graph.elevators), route.entrance_id)
+                alo, ahi = alt.total_seconds
+                indoor["elevator_out_variant"] = {
+                    "mode": alt.equipment.key, "elevator_ok": False, "steps": step_rows(alt),
+                    "time": {"min_seconds": math.floor(alo), "max_seconds": math.ceil(ahi)},
+                    "legs": [{"id": s.index, "kind": s.kind, "text": s.text,
+                              "real": _is_real(s.text, s.kind)} for s in alt.steps]}
+                self._alt_route = alt
+            except NoRoute:
+                pass
         corridor = next((s for s in route.steps if s.text.startswith("Corridor east ")), None)
         if used_elevator:
             dist = f" · {corridor.text.split('Corridor east ')[1]}" if corridor else ""
@@ -342,6 +365,13 @@ class PlanRun:
                            "claimed": shown["seconds_min"], "tolerance": 1.0})
             checks.append({"name": f"Step {s.index} max", "expr": hi_expr,
                            "claimed": shown["seconds_max"], "tolerance": 1.0})
+        alt = getattr(self, "_alt_route", None)
+        variant = indoor["indoor"].get("elevator_out_variant")
+        if alt is not None and variant:
+            checks.append({"name": "Elevator-out route min (s)", "claimed": variant["time"]["min_seconds"],
+                           "expr": "+".join(g.lo_expr for s in alt.steps for g in s.segments), "tolerance": 1.0})
+            checks.append({"name": "Elevator-out route max (s)", "claimed": variant["time"]["max_seconds"],
+                           "expr": "+".join(g.hi_expr for s in alt.steps for g in s.segments), "tolerance": 1.0})
         lo_all = "+".join(g.lo_expr for s in route.steps for g in s.segments)
         hi_all = "+".join(g.hi_expr for s in route.steps for g in s.segments)
         checks.append({"name": "Door to patient min (s)", "expr": lo_all,
