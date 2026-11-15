@@ -26,7 +26,8 @@ from geometry import scan_graph
 from tools.wolfram import _run
 
 BUILDING_ID = "princeton-live"
-MAX_LINK_M = 7.5        # horizontal distance between linked scan positions on one level
+MAX_LINK_M = 5.0        # only neighbouring scan positions are linked: places the scanner stood,
+                        # so the route stays on ground that was actually walked
 MAX_STAIR_LINK_M = 5.0  # horizontal distance between linked positions on a stair
 MAX_RISE_M = 2.2        # height change allowed on one stair link
 SAME_LEVEL_M = 0.3      # below this, two positions are on the same level
@@ -187,7 +188,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("princeton_building", 5)
+    key = cache.key_for("princeton_building", 6)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))
