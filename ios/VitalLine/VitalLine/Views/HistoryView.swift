@@ -52,7 +52,7 @@ private struct HistoryRow: View {
                 Text(entry.plan.dispatch.complaint)
                     .font(.headline)
                     .foregroundStyle(.textPrimary)
-                Text("\(entry.plan.building.name) · Unit \(entry.plan.dispatch.unit)")
+                Text("\(entry.plan.building.name) · \(placeText(floor: entry.plan.dispatch.floor, unit: entry.plan.dispatch.unit))")
                     .font(.subheadline)
                     .foregroundStyle(.textSecondary)
                 Text(entry.date.formatted(date: .abbreviated, time: .shortened))

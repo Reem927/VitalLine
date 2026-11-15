@@ -150,7 +150,7 @@ struct ARNavigationView: View {
                 }
             } else {
                 Text("Where are you standing?").font(.headline)
-                Text("Tap the dot nearest to you (green). Stand there, face along the first cyan line, then start.")
+                Text("Tap the dot nearest to you. Green is you, red is the patient. Stand there, face along the first cyan line, then start.")
                     .font(.caption).multilineTextAlignment(.center)
                 StartPicker(graph: graph, rooms: store.plan?.indoor.rooms ?? [], chosen: chosen) { start = $0 }
                     .frame(height: 190)
@@ -230,7 +230,6 @@ private struct StartPicker: View {
                                 place(graph.points[$1].x, graph.points[$1].z).y - location.y)
                     }) { pick(nearest) }
                 }
-                Text("green: you · red: patient").font(.caption2).foregroundStyle(.gray).padding(4)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -284,7 +283,7 @@ private struct ARRouteView: UIViewRepresentable {
         private var entry: Int?
         private var initialEntry: Int?
         private var lastUpdate: TimeInterval = 0
-        private let cameraHeight: Float = 1.25       // assumed phone height above the floor
+        private var cameraHeight: Float = 1.25       // phone height above the floor; measured when possible
 
         func stop() {
             if let anchor, let arView { arView.scene.removeAnchor(anchor) }
@@ -300,6 +299,14 @@ private struct ARRouteView: UIViewRepresentable {
             guard simd_length(forward) > 0.001 else { return }
             let heading = simd_normalize(forward)
             let cameraYaw = atan2(-heading.x, -heading.z)
+
+            // Measure how high the phone is above the real floor, when ARKit can see the floor.
+            let down = ARRaycastQuery(origin: camera.translation, direction: SIMD3<Float>(0, -1, 0),
+                                      allowing: .estimatedPlane, alignment: .horizontal)
+            if let hit = arView.session.raycast(down).first {
+                let height = camera.translation.y - hit.worldTransform.columns.3.y
+                if height > 0.6 && height < 1.9 { cameraHeight = height }
+            }
 
             let route = graph.path(from: start)
             var leg = SIMD3<Float>(0, 0, -1)
@@ -334,6 +341,7 @@ private struct ARRouteView: UIViewRepresentable {
             user.y -= cameraHeight                              // floor height under the phone
             guard let best = graph.entry(near: user) else { return }
             if best != entry { draw(from: best, user: user) }
+            snapArrows(near: world)
 
             let goal = graph.points[graph.goal]
             let flat = simd_distance(SIMD2<Float>(user.x, user.z), SIMD2<Float>(goal.x, goal.z))
@@ -372,9 +380,27 @@ private struct ARRouteView: UIViewRepresentable {
             content.addChild(marker)
         }
 
+        // Drop nearby arrows onto the surface ARKit sees under them (floor, landing, stair
+        // tread), so they sit on the real ground and not at the scan's estimated height.
+        private func snapArrows(near camera: SIMD3<Float>) {
+            guard let arView, let content else { return }
+            for arrow in content.children where arrow.name == "arrow" {
+                let world = arrow.position(relativeTo: nil)
+                guard simd_distance(world, camera) < 6 else { continue }
+                let query = ARRaycastQuery(origin: world + SIMD3<Float>(0, 0.9, 0), direction: SIMD3<Float>(0, -1, 0),
+                                           allowing: .estimatedPlane, alignment: .any)
+                guard let hit = arView.session.raycast(query).first else { continue }
+                let y = hit.worldTransform.columns.3.y
+                if abs(y - world.y) < 0.7 {
+                    arrow.setPosition(SIMD3<Float>(world.x, y + 0.025, world.z), relativeTo: nil)
+                }
+            }
+        }
+
         // Two flat cyan bars form a forward-pointing chevron on the floor (local forward is -Z).
         private func makeArrow() -> Entity {
             let arrow = Entity()
+            arrow.name = "arrow"
             let material = UnlitMaterial(color: UIColor.cyan)
             for side in [Float(-1), 1] {
                 let bar = ModelEntity(mesh: .generateBox(width: 0.105, height: 0.012, depth: 0.48), materials: [material])

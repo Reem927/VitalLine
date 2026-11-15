@@ -19,8 +19,11 @@ struct Plan3DView: View {
 
     enum MeshState: Equatable { case none, loading, shown, failed }
 
-    init(indoor: Indoor) {
+    var autoWalk = false                   // start the walkthrough as soon as the scan is ready
+
+    init(indoor: Indoor, autoWalk: Bool = false) {
         self.indoor = indoor
+        self.autoWalk = autoWalk
         // The camera lives inside the scene so it keeps its place when the mesh arrives.
         let scene = PlanScene.make(indoor)
         let camera = PlanScene.camera(indoor)
@@ -53,15 +56,7 @@ struct Plan3DView: View {
             // First-person preview for when the crew is not on site: the camera walks the
             // route at eye height inside the scan. It is a simulation, not live AR.
             Button {
-                walking.toggle()
-                if walking {
-                    let gap = (indoor.legs ?? []).filter { !$0.real }.map(\.text).joined(separator: "\n")
-                    PlanScene.startWalk(camera, indoor, includeLobby: lobbyReady,
-                                        gapText: gap.isEmpty ? "Elevator and corridor: not scanned" : gap) { stage = $0 }
-                } else {
-                    stage = nil
-                    PlanScene.resetCamera(camera, indoor)
-                }
+                setWalking(!walking)
             } label: {
                 Label(walking ? "Overview" : "Walk the route", systemImage: walking ? "cube" : "figure.walk")
                     .font(.caption.bold())
@@ -83,7 +78,22 @@ struct Plan3DView: View {
                     .padding(.leading, 10).padding(.bottom, 10).padding(.trailing, 150)
             }
         }
-        .task { await loadMesh() }
+        .task {
+            await loadMesh()
+            if autoWalk, !walking { setWalking(true) }
+        }
+    }
+
+    private func setWalking(_ on: Bool) {
+        walking = on
+        if on {
+            let gap = (indoor.legs ?? []).filter { !$0.real }.map(\.text).joined(separator: "\n")
+            PlanScene.startWalk(camera, indoor, includeLobby: lobbyReady,
+                                gapText: gap.isEmpty ? "Elevator and corridor: not scanned" : gap) { stage = $0 }
+        } else {
+            stage = nil
+            PlanScene.resetCamera(camera, indoor)
+        }
     }
 
     private var badge: String? {

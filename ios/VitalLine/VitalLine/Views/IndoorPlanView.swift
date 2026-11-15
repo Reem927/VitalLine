@@ -12,6 +12,7 @@ struct IndoorPlanView: View {
     var preview = false
     @State private var showFloorPlan = false
     @State private var page = 0            // 0 = outside (aerial), 1 = inside (scan)
+    @State private var showWalkthrough = false
 
     var body: some View {
         ScrollView {
@@ -85,13 +86,26 @@ struct IndoorPlanView: View {
         }
 
         if !preview {
-            Button {
-                router.push(.arNavigation)
-            } label: {
-                Label("AR Navigation", systemImage: "arkit").frame(maxWidth: .infinity)
+            // Live AR needs the crew inside the scanned building, which only the on-site
+            // scenario has. Elsewhere the same route plays as a walkthrough of the real scans.
+            if plan.indoor.nav != nil {
+                Button {
+                    router.push(.arNavigation)
+                } label: {
+                    Label("AR Navigation", systemImage: "arkit").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            } else {
+                Button {
+                    showWalkthrough = true
+                } label: {
+                    Label("Route Walkthrough", systemImage: "figure.walk").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .fullScreenCover(isPresented: $showWalkthrough) {
+                    WalkthroughScreen(indoor: plan.indoor)
+                }
             }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled((plan.indoor.arRoute ?? []).count < 2)
 
             Button("Arrived at Patient") {
                 store.markAtPatient()
@@ -129,6 +143,34 @@ struct IndoorPlanView: View {
 
     private func equipmentName(_ plan: Plan) -> String {
         plan.indoor.mode == "stair_chair" ? "stair chair" : "stretcher"
+    }
+}
+
+// Full-screen simulated walkthrough: the camera follows the route through the real scans,
+// entrance first, then the unit. No phone camera is used.
+struct WalkthroughScreen: View {
+    let indoor: Indoor
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.midnight.ignoresSafeArea()
+            Plan3DView(indoor: indoor, autoWalk: true)
+                .padding(.top, 56)
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.headline)
+                        .frame(width: 40, height: 40)
+                        .background(Color.surface, in: Circle())
+                        .foregroundStyle(.textPrimary)
+                }
+                Spacer()
+                Text("Simulated walkthrough · real scans, not live camera")
+                    .font(.caption).foregroundStyle(.textSecondary)
+            }
+            .padding(.horizontal).padding(.top, 8)
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
