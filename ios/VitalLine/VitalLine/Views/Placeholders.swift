@@ -11,6 +11,10 @@ struct SettingsView: View {
     @Environment(PlanStore.self) private var store
     @Environment(AppRouter.self) private var router
     @AppStorage("scenarioId") private var scenarioId = "houston-cardiac-14"
+    @AppStorage("backendURL") private var backendURL = ""
+    @AppStorage("demoToken") private var demoToken = ""
+    @State private var connection: String?
+    @State private var testing = false
     @State private var confirmLogOut = false
     @State private var showNoAccount = false
 
@@ -18,6 +22,37 @@ struct SettingsView: View {
         List {
             LabeledContent("Data", value: API.useMock ? "Mock (synthetic)" : "Live backend")
                 .listRowBackground(Color.surface)
+            Section {
+                TextField(API.defaultBaseURL.isEmpty ? "Tunnel address (https://...)" : API.defaultBaseURL,
+                          text: $backendURL)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .listRowBackground(Color.surface)
+                SecureField("Demo token", text: $demoToken)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .listRowBackground(Color.surface)
+                Button(testing ? "Testing…" : "Test Connection") {
+                    testing = true
+                    Task {
+                        connection = await API.testConnection()
+                        testing = false
+                        if connection == "Connected." { await store.load() }
+                    }
+                }
+                .disabled(testing)
+                .listRowBackground(Color.surface)
+                if let connection {
+                    Text(connection).font(.footnote)
+                        .foregroundStyle(connection == "Connected." ? .success : .caution)
+                        .listRowBackground(Color.surface)
+                }
+            } header: {
+                Text("Backend")
+            } footer: {
+                Text("On a phone, paste the address and token that scripts/run_tunnel.sh prints on the Mac.")
+            }
             Section {
                 Picker("Scenario", selection: $scenarioId) {
                     Text("Houston demo building").tag("houston-cardiac-14")

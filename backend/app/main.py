@@ -7,11 +7,13 @@ All responses the app reads are 200: the client treats any other status as a fai
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
+import os
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents.planner import get_job, start_job
@@ -64,6 +66,18 @@ def create_app(store: Store | None = None) -> FastAPI:
                   description="Prototype, not a medical device. Synthetic dispatch data.")
     app.state.store = store or make_store(get_settings())
 
+    # Shared demo token: when DEMO_TOKEN is set, every request except /health must carry it
+    # in X-Demo-Token. Needed whenever the backend is reachable through a tunnel.
+    demo_token = os.getenv("DEMO_TOKEN", "").strip()
+
+    @app.middleware("http")
+    async def require_demo_token(request: Request, call_next):
+        if demo_token and request.url.path != "/health":
+            sent = request.headers.get("x-demo-token", "")
+            if not hmac.compare_digest(sent.encode(), demo_token.encode()):
+                return JSONResponse({"detail": "missing or wrong X-Demo-Token"}, status_code=401)
+        return await call_next(request)
+
     def st() -> Store:
         return app.state.store
 
@@ -89,7 +103,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         s = get_settings()
         return {"ok": True, "agents": s.use_agents, "model": s.model_name if s.use_agents else None,
                 "store": type(st()).__name__.removesuffix("Store").lower(),
-                "wolfram": bool(s.wolfram_app_id), "offline": s.offline}
+                "wolfram": bool(s.wolfram_app_id), "offline": s.offline,
+                "token_required": bool(demo_token)}
 
     # -- real scan mesh for the 3D plan view -----------------------------------
 

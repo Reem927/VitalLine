@@ -151,3 +151,16 @@ def test_event_stream_ends_after_completed(client):
     with client.stream("GET", f"/dispatch/{did}/events/stream") as r:
         body = "".join(r.iter_text())
     assert "event: dispatch_received" in body and "event: completed" in body
+
+
+def test_demo_token_is_required_when_set(store, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    monkeypatch.setenv("DEMO_TOKEN", "test-token")
+    c = TestClient(create_app(store))
+    assert c.get("/health").json()["token_required"] is True      # health stays open
+    assert c.get("/history").status_code == 401
+    assert c.get("/history", headers={"X-Demo-Token": "wrong"}).status_code == 401
+    assert c.get("/history", headers={"X-Demo-Token": "test-token"}).status_code == 200

@@ -6,7 +6,7 @@ from pathlib import Path
 os.environ["VITALLINE_OFFLINE"] = "1"
 os.environ["AGENTS_DISABLED"] = "1"
 os.environ["SQLITE_PATH"] = ":memory:"
-for key in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY", "WOLFRAM_API_KEY"):
+for key in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY", "WOLFRAM_API_KEY", "DEMO_TOKEN"):
     os.environ[key] = ""
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

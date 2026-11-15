@@ -83,7 +83,7 @@ enum ScanMesh {
         let manifestURL = API.baseURL.appendingPathComponent(manifestPath)
         var request = URLRequest(url: manifestURL)
         request.timeoutInterval = 180            // the first build on the backend can take a while
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await URLSession.shared.data(for: API.authorized(request))
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let manifest = try decoder.decode(Manifest.self, from: data)
@@ -99,7 +99,8 @@ enum ScanMesh {
                 let target = folder.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: target.path) { continue }
                 group.addTask {
-                    let (tmp, response) = try await URLSession.shared.download(from: base.appendingPathComponent(name))
+                    let fileRequest = API.authorized(URLRequest(url: base.appendingPathComponent(name)))
+                    let (tmp, response) = try await URLSession.shared.download(for: fileRequest)
                     guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
                     try? FileManager.default.removeItem(at: target)
                     try FileManager.default.moveItem(at: tmp, to: target)
