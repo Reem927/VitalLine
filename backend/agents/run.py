@@ -59,6 +59,42 @@ def _trace_id() -> str | None:
         return None
 
 
+def _km(a: dict[str, float], b: dict[str, float]) -> float:
+    la1, la2 = math.radians(a["lat"]), math.radians(b["lat"])
+    h = (math.sin((la2 - la1) / 2) ** 2
+         + math.cos(la1) * math.cos(la2) * math.sin(math.radians(b["lon"] - a["lon"]) / 2) ** 2)
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+def _ar_route(path: list[dict[str, float]]) -> list[dict[str, float]]:
+    """Plan path (x, y up, z = floor-plan y) as AR waypoints: origin at the first point,
+    Y up, first horizontal leg along -Z.
+
+    The AR view assumes the phone starts at the first point facing along the first leg, so
+    the crew stands at the start and faces the way the first arrow points.
+    """
+    if len(path) < 2:
+        return []
+    x0, y0, z0 = path[0]["x"], path[0].get("y", 0.0), path[0]["z"]
+    nxt = next((p for p in path[1:] if math.hypot(p["x"] - x0, p["z"] - z0) > 0.05), path[1])
+    dx, dz = nxt["x"] - x0, nxt["z"] - z0
+    length = math.hypot(dx, dz) or 1.0
+    s, c = -dx / length, -dz / length          # rotation that sends the first leg to -Z
+    out = []
+    for p in path:
+        x, z = p["x"] - x0, p["z"] - z0
+        out.append({"x": round(x * c - z * s, 3), "y": round(p.get("y", 0.0) - y0, 3),
+                    "z": round(x * s + z * c, 3)})
+    return out
+
+
+def _is_real(text: str, kind: str) -> bool:
+    """Whether a step comes from scan data (True) or is modeled or estimated (False)."""
+    if "not scanned" in text or "estimated" in text or "assumed" in text:
+        return False
+    return kind == "walk" or "(scanned)" in text
+
+
 class PlanBlocked(Exception):
     """A step failed in a way that must stop the plan (e.g. Wolfram mismatch, no route)."""
 
@@ -147,14 +183,18 @@ class PlanRun:
 
     def _step_location(self) -> dict[str, Any]:
         b, geo = self.building, self.dispatch.get("geocode") or {}
-        source = "synthetic"
+        src = b.get("source", "")
+        source = "CoStar" if src.startswith("CoStar") else ("Matterport" if src.startswith("Matterport") else "synthetic")
         return {
             "ok": True,
             "building": {"name": b["name"], "floors": b["floors"], "type": b["type"],
                          "source": source},
             "geocode_source": geo.get("source"),
             "geocode_url": geo.get("request_url"),
-            "detail": f"Synthetic: {b['name']}, {b['floors']} floors, {b['type'].lower()}",
+            "detail": (f"CoStar: {b['floors']} floors, {b['type'].split(',')[0].lower()}"
+                       if source == "CoStar"
+                       else f"Matterport scan: {b['floors']} levels scanned" if source == "Matterport"
+                       else f"Synthetic: {b['name']}, {b['floors']} floors, {b['type'].lower()}"),
         }
 
     def _step_outdoor(self) -> dict[str, Any]:
@@ -169,9 +209,14 @@ class PlanRun:
             for i, h in enumerate(nearby_hazards(self.building), start=1)
         ]
         rig = self.dispatch.get("rig_location")
+        rig_note = None
+        if rig and staging and _km(rig, staging) > 50:
+            # The app's rig position is in another city: start a simulated drive nearby instead.
+            rig = {"lat": staging["lat"] - 0.012, "lon": staging["lon"] - 0.008}
+            rig_note = "Rig start simulated about 1.5 km away (app location was in another city)"
         outdoor: dict[str, Any] = {"staging": staging, "entrance": entrance["location"],
                                    "flags": flags, "route": [], "eta_minutes": None,
-                                   "distance_km": None}
+                                   "distance_km": None, "maneuvers": [], "route_note": None}
         meta: dict[str, Any] = {}
         if rig:
             r = drive_route(rig, staging)
@@ -179,8 +224,12 @@ class PlanRun:
                 route=[{"lat": lat, "lon": lon} for lat, lon in r["shape"]],
                 eta_minutes=max(1, math.ceil(r["minutes"])),
                 distance_km=r["km"],
+                maneuvers=r.get("maneuvers", []),
+                route_note=r.get("rules_note"),
             )
             meta = {k: r.get(k) for k in ("source", "confidence", "request_url", "note", "minutes")}
+            if rig_note:
+                meta["rig_note"] = rig_note
             drive = f"{outdoor['eta_minutes']} min via {'Valhalla' if r['source'] == 'valhalla' else 'estimate'}"
         else:
             drive = "drive time unknown (no crew location)"
@@ -195,6 +244,7 @@ class PlanRun:
         route = self.route()
         parking, rejected = self._parking_for(route.entrance_id)
         ent = self.graph.entrances[route.entrance_id]
+        synthetic = not self.building.get("source", "").startswith("CoStar")
         notes = []
         if parking:
             clr = parking["clearance_ft"]
@@ -202,17 +252,17 @@ class PlanRun:
                 "id": "a1",
                 "text": f"Park: {parking['label']} ({parking['detail']})"
                         + (f", {clr:g} ft clearance" if clr else ""),
-                "confidence": "medium", "synthetic": True})
+                "confidence": "medium", "synthetic": synthetic})
         else:
             notes.append({"id": "a1", "text": "Parking unknown: no spot clears the rig",
-                          "confidence": "unknown", "synthetic": True})
+                          "confidence": "unknown", "synthetic": synthetic})
         notes.append({"id": "a2", "text": f"Entrance: {ent['label']}, {ent['detail']}",
-                      "confidence": "medium", "synthetic": True})
+                      "confidence": "medium", "synthetic": synthetic})
         for i, p in enumerate(rejected, start=3):
             notes.append({"id": f"a{i}",
                           "text": f"Avoid {p['label']} {p['detail']}: {p['clearance_ft']:g} ft "
                                   f"clearance, rig needs {AMBULANCE_HEIGHT_FT:g} ft",
-                          "confidence": "medium", "synthetic": True})
+                          "confidence": "medium", "synthetic": synthetic})
         detail = (f"Parking: {parking['label']} · " if parking else "Parking: unknown · ") + \
                  f"Entrance: {ent['detail'].split(',')[0]}"
         return {"ok": parking is not None, "access": notes, "parking": parking,
@@ -245,18 +295,29 @@ class PlanRun:
             "mode": route.equipment.key,
             "elevator_ok": used_elevator,
             "floor_plan_image_url": None,
+            "wall_height_m": fp.get("wall_height_m"),
+            "mesh_url": f"/scan-mesh/{self.building['id']}/manifest" if self.building.get("mesh") else None,
+            "path3d": self.building.get("path3d") or [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path],
+            "ar_route": _ar_route(self.building.get("path3d")
+                                  or [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path]),
+            "legs": [{"id": s.index, "kind": s.kind, "text": s.text, "real": _is_real(s.text, s.kind)}
+                     for s in route.steps],
         }
         steps = [{"id": s.index, "text": s.text, "seconds_min": math.floor(s.seconds[0]),
                   "seconds_max": math.ceil(s.seconds[1])} for s in route.steps]
         lo, hi = route.total_seconds
         time = {"min_seconds": math.floor(lo), "max_seconds": math.ceil(hi)}
-        corridor = next((s for s in route.steps if s.text.startswith("Corridor")), None)
+        corridor = next((s for s in route.steps if s.text.startswith("Corridor east ")), None)
         if used_elevator:
             dist = f" · {corridor.text.split('Corridor east ')[1]}" if corridor else ""
             detail = f"{route.vertical} fits {route.equipment.label.lower()}{dist}"
         else:
-            out = "Elevators out" if set(self.graph.elevators) <= self.out_of_service \
-                else "No usable elevator"
+            if not self.graph.elevators:
+                out = "No elevator in the data"
+            elif set(self.graph.elevators) <= self.out_of_service:
+                out = "Elevators out"
+            else:
+                out = "No usable elevator"
             detail = f"{out}: {route.vertical} with {route.equipment.label.lower()}"
         return {"ok": True, "indoor": indoor, "steps": steps, "time": time,
                 "equipment": route.equipment.key, "vertical": route.vertical, "detail": detail}
@@ -280,12 +341,12 @@ class PlanRun:
         checks.append({"name": "Door to patient max (s)", "expr": hi_all,
                        "claimed": indoor["time"]["max_seconds"], "tolerance": 1.0})
 
-        results = [wolfram.verify([{k: c[k] for k in ("name", "expr", "claimed")}],
-                                  tolerance=c["tolerance"]) for c in checks]
-        flat = [r["checks"][0] for r in results]
-        verified = all(r["verified"] for r in results)
-        by = "wolfram" if any(r["verified_by"] == "wolfram" for r in results) \
-            else "local_exact_arithmetic"
+        # One batched call: every check shares the same whole-second tolerance.
+        batch = wolfram.verify([{k: c[k] for k in ("name", "expr", "claimed")} for c in checks],
+                               tolerance=1.0)
+        flat = batch["checks"]
+        verified = batch["verified"]
+        by = batch["verified_by"]
         total = flat[-1]
         result_text = f"{total['local']:g} s" + ("" if by == "wolfram"
                                                   else " (exact arithmetic; Wolfram not configured)")

@@ -73,7 +73,7 @@
     {
       "id": "E1",
       "label": "Elevator 1",
-      "car_depth_in": 68,
+      "car_depth_in": 60,
       "car_width_in": 51,
       "in_service": true
     },

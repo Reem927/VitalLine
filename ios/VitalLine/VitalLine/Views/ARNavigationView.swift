@@ -4,10 +4,10 @@ import RealityKit
 import UIKit
 import simd
 
-// MARK: - Temporary backend contract
-// Coordinates are in meters, in the building model's local coordinate system.
-// -Z points along the entrance corridor; +X points right; Y points up.
-// Replace the sample route with decoded backend waypoints when available.
+// MARK: - Backend contract
+// indoor.ar_route: metres, origin at the route's first point, Y up, first leg along -Z.
+// The crew stands at the first point (the start of the recommended route) and faces the
+// first leg, then starts AR. The sample route is used only when the plan has no AR route.
 private struct VLWaypoint {
     let x: Float
     let y: Float
@@ -37,14 +37,25 @@ private enum VLDemoRoute {
 
 // MARK: - User interface
 struct ARNavigationView: View {
+    @Environment(PlanStore.self) private var store
     @State private var alignmentVersion = 0
     @State private var clearVersion = 0
     @State private var isAligned = false
 
+    private var planRoute: VLRoute? {
+        guard let pts = store.plan?.indoor.arRoute, pts.count >= 2 else { return nil }
+        return VLRoute(waypoints: pts.map { VLWaypoint(x: Float($0.x), y: Float($0.y), z: Float($0.z)) },
+                       modelResourceName: nil)
+    }
+
+    private var startPlace: String {
+        store.plan?.indoor.legs?.last.map { _ in "the unit door" } ?? "the route start"
+    }
+
     var body: some View {
         ZStack {
             VLRouteCamera(
-                route: VLDemoRoute.sample,
+                route: planRoute ?? VLDemoRoute.sample,
                 alignmentVersion: alignmentVersion,
                 clearVersion: clearVersion
             )
@@ -57,7 +68,7 @@ struct ARNavigationView: View {
                     Text("VITALLINE AR")
                         .font(.headline)
                     Spacer()
-                    Text("DEMO")
+                    Text(planRoute == nil ? "SAMPLE" : "PLAN ROUTE")
                         .font(.caption.bold())
                         .foregroundStyle(.cyan)
                 }
@@ -67,11 +78,12 @@ struct ARNavigationView: View {
                 Spacer()
 
                 VStack(spacing: 12) {
-                    Text(isAligned ? "Sample route displayed" : "Align at the entrance")
+                    Text(isAligned ? (planRoute == nil ? "Sample route displayed" : "Follow the chevrons")
+                                   : "Align at \(startPlace)")
                         .font(.headline)
                     Text(isAligned
-                         ? "Cyan chevrons show a sample route. Tracking can drift."
-                         : "Stand at the known entrance, face the first corridor, then start.")
+                         ? "Chevrons follow the recommended route. Tracking can drift; realign if needed."
+                         : "Stand at \(startPlace), face into the unit along the first leg, then start.")
                         .font(.caption)
                         .multilineTextAlignment(.center)
 

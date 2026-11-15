@@ -7,18 +7,40 @@ from typing import Any
 from tools.building import load_building
 from tools.geocode import geocode
 
-_HOUSTON = {"building_id": "demo-tower", "incident_type": "Cardiac arrest",
-            "floor": 14, "unit": "1404", "priority": "High"}
+_TOWER = {"building_id": "demo-tower", "incident_type": "Cardiac arrest",
+          "floor": 14, "unit": "1404", "priority": "High"}
 
-# scenario_id -> call details. "houston-cardiac-14" is the id the app sends today.
-SCENARIOS: dict[str, dict[str, Any]] = {
-    "houston-demo": _HOUSTON,
-    "houston-cardiac-14": _HOUSTON,
-}
+
+def _real() -> dict[str, Any]:
+    """The real demo building. Floor and unit come from the gitignored local config."""
+    from app.config import demo_config
+    cfg = demo_config()["primary"]
+    return {"building_id": "houston-dunlavy", "incident_type": "Cardiac arrest",
+            "floor": int(cfg["patient_floor"]), "unit": str(cfg["patient_unit"]), "priority": "High"}
+
+
+_PRINCETON = {"building_id": "princeton-live", "incident_type": "Cardiac arrest",
+              "floor": 2, "unit": "upper landing", "priority": "High"}
+
+
+def _scenario(scenario_id: str) -> dict[str, Any]:
+    if scenario_id == "princeton-live":
+        return _PRINCETON
+    # "houston-cardiac-14" is the id the app sends today; it now means the real building.
+    # Offline (tests, no network) always uses the synthetic tower.
+    from app.settings import get_settings
+    if scenario_id in ("houston-demo", "houston-cardiac-14"):
+        return _TOWER if get_settings().offline else _real()
+    if scenario_id == "synthetic-tower":
+        return _TOWER
+    raise KeyError(scenario_id)
+
+
+SCENARIOS = ("houston-demo", "houston-cardiac-14", "synthetic-tower", "princeton-live")
 
 
 def make_dispatch(scenario_id: str, crew_location: dict[str, float] | None) -> dict[str, Any]:
-    sc = SCENARIOS[scenario_id]
+    sc = _scenario(scenario_id)
     building = load_building(sc["building_id"])
     geo = geocode(building["address"], fallback=building["location"])
     return {

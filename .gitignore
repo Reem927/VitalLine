@@ -89,6 +89,18 @@ supabase/.env
 CLAUDE.md
 .claude/settings.local.json
 
+# CoStar, Matterport and Vexcel data: hackathon use only, never republish
+data/raw/
+data/cache/
+mp_out/
+*.zip
+*.dxf
+*.ply
+models_index.csv
+
+# Local demo config with sponsor identifiers: never commit
+*.local.json
+
 # Local event store
 data/vitalline.db
 data/*.db-journal

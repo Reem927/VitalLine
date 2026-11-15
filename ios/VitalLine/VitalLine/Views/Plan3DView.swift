@@ -1,0 +1,298 @@
+import SwiftUI
+import SceneKit
+import ModelIO
+import SceneKit.ModelIO
+
+// Recommended Plan in 3D. Shows the real Matterport scan mesh when the backend has one
+// (indoor.meshUrl), with the crew path, door markers and a marker walking the route drawn
+// inside it. Until the mesh has downloaded, or if there is none, it shows walls raised from
+// the scanned room outlines instead.
+// Coordinates are metres: x = floor-plan x, z = floor-plan y, y up. Drag to orbit, pinch to zoom.
+struct Plan3DView: View {
+    let indoor: Indoor
+    @State private var scene: SCNScene
+    @State private var camera: SCNNode
+    @State private var meshState = MeshState.none
+
+    enum MeshState: Equatable { case none, loading, shown, failed }
+
+    init(indoor: Indoor) {
+        self.indoor = indoor
+        // The camera lives inside the scene so it keeps its place when the mesh arrives.
+        let scene = PlanScene.make(indoor)
+        let camera = PlanScene.camera(indoor)
+        scene.rootNode.addChildNode(camera)
+        _scene = State(initialValue: scene)
+        _camera = State(initialValue: camera)
+    }
+
+    // Use as .id(...) so the view rebuilds when the plan changes (elevator toggle).
+    static func key(_ indoor: Indoor) -> String {
+        "\(indoor.mode)-\(indoor.elevatorOk)-\(indoor.path.count)-\(indoor.rooms.count)-\(indoor.meshUrl ?? "")"
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            SceneView(scene: scene, pointOfView: camera,
+                      options: [.allowsCameraControl, .autoenablesDefaultLighting])
+                .background(Color.midnight)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            if let badge {
+                Text(badge)
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .foregroundStyle(.white)
+                    .padding(10)
+            }
+        }
+        .task { await loadMesh() }
+    }
+
+    private var badge: String? {
+        switch meshState {
+        case .none: return nil
+        case .loading: return "Loading real scan…"
+        case .shown: return "REAL SCAN · MATTERPORT"
+        case .failed: return "Scan mesh unavailable · showing room outlines"
+        }
+    }
+
+    private func loadMesh() async {
+        guard meshState == .none, let path = indoor.meshUrl, !API.useMock else { return }
+        meshState = .loading
+        do {
+            let node = try await ScanMesh.load(manifestPath: path)
+            PlanScene.showMesh(node, in: scene)
+            meshState = .shown
+        } catch {
+            meshState = .failed
+        }
+    }
+}
+
+// Downloads the converted scan mesh once and keeps it in the app's cache folder.
+enum ScanMesh {
+    struct Manifest: Decodable {
+        let files: [String]
+        let textured: Bool
+    }
+
+    static func load(manifestPath: String) async throws -> SCNNode {
+        let manifestURL = API.baseURL.appendingPathComponent(manifestPath)
+        var request = URLRequest(url: manifestURL)
+        request.timeoutInterval = 180            // the first build on the backend can take a while
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let manifest = try decoder.decode(Manifest.self, from: data)
+
+        let base = manifestURL.deletingLastPathComponent()
+        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("scan-mesh")
+            .appendingPathComponent(base.lastPathComponent)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for name in manifest.files {
+                let target = folder.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: target.path) { continue }
+                group.addTask {
+                    let (tmp, response) = try await URLSession.shared.download(from: base.appendingPathComponent(name))
+                    guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+                    try? FileManager.default.removeItem(at: target)
+                    try FileManager.default.moveItem(at: tmp, to: target)
+                }
+            }
+            try await group.waitForAll()
+        }
+
+        let objURL = folder.appendingPathComponent("model.obj")
+        let textured = manifest.textured
+        return try await Task.detached(priority: .userInitiated) {
+            let asset = MDLAsset(url: objURL)
+            asset.loadTextures()
+            let loaded = SCNScene(mdlAsset: asset)
+            let node = SCNNode()
+            node.name = "scanMesh"
+            for child in loaded.rootNode.childNodes { node.addChildNode(child) }
+            node.enumerateHierarchy { n, _ in
+                for material in n.geometry?.materials ?? [] {
+                    // Scan textures already carry the room's lighting, so show them as they are.
+                    material.lightingModel = textured ? .constant : .lambert
+                    material.isDoubleSided = false   // looking in from outside shows the rooms
+                }
+            }
+            guard node.childNodes.contains(where: { $0.geometry != nil || !$0.childNodes.isEmpty }) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            return node
+        }.value
+    }
+}
+
+enum PlanScene {
+    static let wallColor = UIColor(red: 0.53, green: 0.65, blue: 0.80, alpha: 0.35)
+    static let floorColor = UIColor(red: 0.09, green: 0.14, blue: 0.22, alpha: 1)
+    static let pathColor = UIColor(red: 0.13, green: 0.84, blue: 0.91, alpha: 1)
+
+    static func make(_ indoor: Indoor) -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = UIColor(red: 0.04, green: 0.07, blue: 0.13, alpha: 1)
+        let root = scene.rootNode
+        let wallH = Float(indoor.wallHeightM ?? 2.6)   // visual only, never shown as a number
+
+        // Room outlines: shown until the real scan mesh replaces them.
+        let outlines = SCNNode()
+        outlines.name = "outlines"
+        for room in indoor.rooms where room.polygon.count >= 3 {
+            outlines.addChildNode(floor(room))
+            let pts = room.polygon + [room.polygon[0]]
+            for (a, b) in zip(pts, pts.dropFirst()) {
+                outlines.addChildNode(wall(a, b, height: wallH))
+            }
+        }
+        root.addChildNode(outlines)
+
+        for room in indoor.rooms where room.polygon.count >= 3 && !room.name.isEmpty {
+            root.addChildNode(label(room.name, at: centroid(room.polygon), height: 0.3))
+        }
+
+        for door in indoor.doors {
+            let marker = SCNNode(geometry: SCNBox(width: 0.25, height: 0.06, length: 0.25, chamferRadius: 0.03))
+            marker.geometry?.firstMaterial?.diffuse.contents = door.passable ? UIColor.systemGreen : UIColor.systemRed
+            marker.geometry?.firstMaterial?.emission.contents = door.passable ? UIColor.systemGreen : UIColor.systemRed
+            marker.position = SCNVector3(Float(door.at.x), 0.08, Float(door.at.y))
+            root.addChildNode(marker)
+        }
+
+        // The path keeps its real height changes (stairs) when the backend sends them.
+        let pts = (indoor.path3d?.map { SCNVector3(Float($0.x), Float($0.y) + 0.15, Float($0.z)) })
+            ?? indoor.path.map { SCNVector3(Float($0.x), 0.15, Float($0.y)) }
+        if pts.count >= 2 {
+            for (a, b) in zip(pts, pts.dropFirst()) { root.addChildNode(tube(a, b)) }
+            root.addChildNode(sphere(at: pts.first!, color: .systemGreen, radius: 0.18))
+            root.addChildNode(sphere(at: pts.last!, color: .systemRed, radius: 0.24))
+            root.addChildNode(walker(along: pts))
+        }
+
+        let light = SCNNode()
+        light.light = SCNLight()
+        light.light?.type = .ambient
+        light.light?.intensity = 600
+        root.addChildNode(light)
+        return scene
+    }
+
+    // Swap the room outlines for the real scan mesh.
+    @MainActor
+    static func showMesh(_ mesh: SCNNode, in scene: SCNScene) {
+        scene.rootNode.childNode(withName: "outlines", recursively: false)?.isHidden = true
+        scene.rootNode.childNode(withName: "scanMesh", recursively: false)?.removeFromParentNode()
+        scene.rootNode.addChildNode(mesh)
+    }
+
+    static func camera(_ indoor: Indoor) -> SCNNode {
+        let node = SCNNode()
+        node.camera = SCNCamera()
+        node.camera?.zFar = 500
+        // Frame the route (with some room around it), not the whole building.
+        let xs = indoor.path3d?.map(\.x) ?? indoor.path.map(\.x)
+        let zs = indoor.path3d?.map(\.z) ?? indoor.path.map(\.y)
+        let ys = indoor.path3d?.map(\.y) ?? [0]
+        var cx = Float(indoor.widthM / 2), cz = Float(indoor.heightM / 2), cy: Float = 0
+        var span = Float(max(indoor.widthM, indoor.heightM))
+        if let x0 = xs.min(), let x1 = xs.max(), let z0 = zs.min(), let z1 = zs.max() {
+            cx = Float((x0 + x1) / 2); cz = Float((z0 + z1) / 2)
+            cy = Float(((ys.min() ?? 0) + (ys.max() ?? 0)) / 2)
+            span = min(span, max(Float(max(x1 - x0, z1 - z0)) * 1.5, 9))
+        }
+        node.position = SCNVector3(cx, cy + span * 1.0, cz + span * 0.8)
+        node.look(at: SCNVector3(cx, cy, cz))
+        return node
+    }
+
+    // MARK: - Builders
+
+    private static func floor(_ room: Room) -> SCNNode {
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: room.polygon[0].x, y: room.polygon[0].y))
+        for p in room.polygon.dropFirst() { path.addLine(to: CGPoint(x: p.x, y: p.y)) }
+        path.close()
+        let shape = SCNShape(path: path, extrusionDepth: 0.02)
+        shape.firstMaterial?.diffuse.contents = floorColor
+        let node = SCNNode(geometry: shape)
+        node.eulerAngles.x = .pi / 2          // shape (x, y) -> scene (x, z)
+        return node
+    }
+
+    private static func wall(_ a: PlanPoint, _ b: PlanPoint, height: Float) -> SCNNode {
+        let dx = Float(b.x - a.x), dz = Float(b.y - a.y)
+        let length = (dx * dx + dz * dz).squareRoot()
+        let box = SCNBox(width: CGFloat(length), height: CGFloat(height), length: 0.06, chamferRadius: 0)
+        box.firstMaterial?.diffuse.contents = wallColor
+        box.firstMaterial?.isDoubleSided = true
+        let node = SCNNode(geometry: box)
+        node.position = SCNVector3(Float(a.x) + dx / 2, height / 2, Float(a.y) + dz / 2)
+        node.eulerAngles.y = atan2(-dz, dx)
+        return node
+    }
+
+    // A tube between two points; handles height changes (stairs) as well as flat legs.
+    private static func tube(_ a: SCNVector3, _ b: SCNVector3) -> SCNNode {
+        let d = SIMD3<Float>(b.x - a.x, b.y - a.y, b.z - a.z)
+        let length = simd_length(d)
+        let cylinder = SCNCylinder(radius: 0.07, height: CGFloat(length))
+        cylinder.firstMaterial?.diffuse.contents = pathColor
+        cylinder.firstMaterial?.emission.contents = pathColor
+        let node = SCNNode(geometry: cylinder)
+        node.position = SCNVector3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
+        if length > 0.0001 {
+            node.simdOrientation = simd_quatf(from: SIMD3<Float>(0, 1, 0), to: simd_normalize(d))
+        }
+        return node
+    }
+
+    private static func sphere(at p: SCNVector3, color: UIColor, radius: CGFloat) -> SCNNode {
+        let node = SCNNode(geometry: SCNSphere(radius: radius))
+        node.geometry?.firstMaterial?.diffuse.contents = color
+        node.geometry?.firstMaterial?.emission.contents = color
+        node.position = p
+        return node
+    }
+
+    // A small marker that walks the route on a loop.
+    private static func walker(along pts: [SCNVector3]) -> SCNNode {
+        let node = sphere(at: pts[0], color: .white, radius: 0.12)
+        var actions: [SCNAction] = []
+        for (a, b) in zip(pts, pts.dropFirst()) {
+            let d = Double(simd_length(SIMD3<Float>(b.x - a.x, b.y - a.y, b.z - a.z)))
+            actions.append(.move(to: b, duration: max(0.15, d / 1.2)))
+        }
+        actions.append(.wait(duration: 0.6))
+        actions.append(.move(to: pts[0], duration: 0))
+        node.runAction(.repeatForever(.sequence(actions)))
+        return node
+    }
+
+    private static func label(_ text: String, at p: PlanPoint, height: Float) -> SCNNode {
+        let t = SCNText(string: text, extrusionDepth: 0)
+        t.font = .systemFont(ofSize: 0.26, weight: .semibold)
+        t.flatness = 0.05
+        t.firstMaterial?.diffuse.contents = UIColor.white.withAlphaComponent(0.9)
+        t.firstMaterial?.readsFromDepthBuffer = false     // stay readable over the scan
+        let node = SCNNode(geometry: t)
+        let (minB, maxB) = node.boundingBox
+        node.pivot = SCNMatrix4MakeTranslation((maxB.x - minB.x) / 2 + minB.x, 0, 0)
+        node.position = SCNVector3(Float(p.x), height, Float(p.y))
+        node.constraints = [SCNBillboardConstraint()]
+        node.renderingOrder = 10
+        return node
+    }
+
+    private static func centroid(_ pts: [PlanPoint]) -> PlanPoint {
+        PlanPoint(x: pts.map(\.x).reduce(0, +) / Double(pts.count),
+                  y: pts.map(\.y).reduce(0, +) / Double(pts.count))
+    }
+}

@@ -10,8 +10,8 @@ def graph():
 
 def test_stretcher_fits_elevator_2_not_elevator_1():
     assert fits_in_car(STRETCHER, 80, 54).fits
-    assert not fits_in_car(STRETCHER, 68, 51).fits
-    assert fits_in_car(STAIR_CHAIR, 68, 51).fits
+    assert not fits_in_car(STRETCHER, 60, 51).fits
+    assert fits_in_car(STAIR_CHAIR, 60, 51).fits
 
 
 def test_default_route_matches_demo():

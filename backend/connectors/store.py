@@ -328,5 +328,11 @@ class SupabaseStore:
 
 def make_store(settings) -> Store:
     if settings.use_supabase:
-        return SupabaseStore(settings.supabase_url, settings.supabase_service_key)
+        try:
+            store = SupabaseStore(settings.supabase_url, settings.supabase_service_key)
+            store.client.table("dispatches").select("id").limit(1).execute()
+            return store
+        except Exception as exc:  # noqa: BLE001 - tables missing or project unreachable
+            print(f"Supabase not usable ({type(exc).__name__}): using the local SQLite store. "
+                  "Run connectors/supabase_schema.sql in the project to enable it.")
     return SQLiteStore(settings.sqlite_path)

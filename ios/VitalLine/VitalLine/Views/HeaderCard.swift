@@ -16,7 +16,7 @@ struct HeaderCard: View {
             
             Text(plan.dispatch.complaint)
                 .font(.headline)
-            Text("\(plan.dispatch.address) · Floor \(plan.dispatch.floor), Unit \(plan.dispatch.unit)")
+            Text("\(plan.dispatch.address) · \(placeText(floor: plan.dispatch.floor, unit: plan.dispatch.unit))")
                 .font(.subheadline)
                 .foregroundStyle(.textSecondary)
 

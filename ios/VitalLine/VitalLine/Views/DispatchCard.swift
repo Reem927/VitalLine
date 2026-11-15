@@ -33,7 +33,7 @@ struct DispatchCard: View {
             Divider().overlay(Color.textSecondary.opacity(0.3))
 
             DispatchInfoRow(icon: "building.2",
-                            text: "\(dispatch.address) · Floor \(dispatch.floor), Unit \(dispatch.unit)")
+                            text: "\(dispatch.address) · \(placeText(floor: dispatch.floor, unit: dispatch.unit))")
             DispatchInfoRow(icon: "clock", text: "ETA: \(etaText)")
 
             HStack(spacing: 8) {

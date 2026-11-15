@@ -13,7 +13,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = BACKEND_DIR.parent
 load_dotenv(BACKEND_DIR / ".env")
 
-DEFAULT_MODEL = "google_genai:gemini-2.5-flash"
+DEFAULT_MODEL = "anthropic:claude-sonnet-5-5"
 PUBLIC_VALHALLA = "https://valhalla1.openstreetmap.de"
 
 
@@ -50,10 +50,21 @@ class Settings:
         return bool(self.supabase_url and self.supabase_service_key)
 
 
+def _model_name() -> str:
+    """MODEL_NAME with a provider prefix, so "gemini-4-hydrogen" resolves to Google GenAI."""
+    name = os.getenv("MODEL_NAME") or DEFAULT_MODEL
+    if ":" not in name:
+        if name.startswith("gemini"):
+            return f"google_genai:{name}"
+        if name.startswith("claude"):
+            return f"anthropic:{name}"
+    return name
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
-        model_name=os.getenv("MODEL_NAME") or DEFAULT_MODEL,
+        model_name=_model_name(),
         google_api_key=os.getenv("GOOGLE_API_KEY", ""),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         wolfram_app_id=os.getenv("WOLFRAM_API_KEY", ""),
