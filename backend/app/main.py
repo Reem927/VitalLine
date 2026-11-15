@@ -173,7 +173,7 @@ def create_app(store: Store | None = None) -> FastAPI:
     def scan_mesh_file(building_id: str, name: str) -> FileResponse:
         from tools import scan_mesh
         info = scan_mesh.manifest(building_id)
-        if info is None or name not in info["files"]:
+        if info is None or name not in info["files"] or "/" in name:
             raise HTTPException(404, "unknown mesh file")
         return FileResponse(scan_mesh.mesh_dir(building_id) / name)
 

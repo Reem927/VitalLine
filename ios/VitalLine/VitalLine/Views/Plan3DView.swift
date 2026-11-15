@@ -118,9 +118,25 @@ enum ScanMesh {
     struct Manifest: Decodable {
         let files: [String]
         let textured: Bool
+        let version: Int?
     }
 
+    // Each scan is loaded once and shared: every 3D view gets a light copy that points at
+    // the same geometry and textures, instead of loading the scan again.
+    @MainActor private static var loaded: [String: SCNNode] = [:]
+
+    @MainActor
     static func load(manifestPath: String) async throws -> SCNNode {
+        if let hit = loaded[manifestPath] { return hit.clone() }
+        let node = try await fetch(manifestPath: manifestPath)
+        loaded[manifestPath] = node
+        return node.clone()
+    }
+
+    @MainActor
+    static func releaseAll() { loaded.removeAll() }
+
+    private static func fetch(manifestPath: String) async throws -> SCNNode {
         let manifestURL = API.baseURL.appendingPathComponent(manifestPath)
         var request = URLRequest(url: manifestURL)
         request.timeoutInterval = 180            // the first build on the backend can take a while
@@ -132,7 +148,7 @@ enum ScanMesh {
         let base = manifestURL.deletingLastPathComponent()
         let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("scan-mesh")
-            .appendingPathComponent(base.lastPathComponent)
+            .appendingPathComponent("\(base.lastPathComponent)-v\(manifest.version ?? 1)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         try await withThrowingTaskGroup(of: Void.self) { group in

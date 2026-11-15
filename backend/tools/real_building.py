@@ -144,7 +144,7 @@ async def _build() -> dict[str, Any]:
     lobby_path = [{"x": round(w["x"] - c_minx, 3), "y": round((w["z"] or c_z0) - c_z0, 3),
                    "z": round(c_maxy - w["y"], 3)} for w in entry_path["waypoints"]]
     lobby_mesh = {"model_id": ids["concierge_entrance_stairs"], "min_x": c_minx, "max_y": c_maxy,
-                  "ref_z": c_z0, "rise_m": 0.0}
+                  "ref_z": c_z0, "rise_m": 0.0, "texture_px": 512}
     loc = concierge["geolocation"]
     stories = (facts or {}).get("stories")
     return {
@@ -181,7 +181,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("real_building", BUILDING_ID, 7)
+    key = cache.key_for("real_building", BUILDING_ID, 8)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))

@@ -30,6 +30,10 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .tint(.brandPrimary)
         .task { await auth.checkBackend() }
+        // Under memory pressure, drop the shared scans; they reload from the phone's cache.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            ScanMesh.releaseAll()
+        }
     }
 }
 
