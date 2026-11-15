@@ -25,7 +25,7 @@ struct HistoryDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(dispatch.complaint) · \(entry.plan.building.name) · Unit \(dispatch.unit)")
+                    Text("\(dispatch.complaint) · \(entry.plan.building.name) · \(placeText(floor: dispatch.floor, unit: dispatch.unit))")
                         .font(.headline)
                         .foregroundStyle(.textPrimary)
                     Text("\(entry.date.formatted(date: .abbreviated, time: .shortened)) · Unit \(entry.crewUnit) · \(equipmentName)")
