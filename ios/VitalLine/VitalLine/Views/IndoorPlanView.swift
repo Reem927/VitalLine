@@ -46,6 +46,7 @@ struct IndoorPlanView: View {
         if !preview { ElevatorToggle() }
 
         Plan3DView(indoor: plan.indoor)
+            .id(Plan3DView.key(plan.indoor))
             .frame(height: 340)
         Text("Drag to rotate, pinch to zoom. Green door fits the \(equipmentName(plan)); red does not.")
             .font(.caption).foregroundStyle(.textSecondary)

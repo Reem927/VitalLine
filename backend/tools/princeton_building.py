@@ -29,7 +29,7 @@ BUILDING_ID = "princeton-live"
 MAX_LINK_M = 5.0        # horizontal distance between linked scan positions
 MAX_RISE_M = 2.2        # height change allowed on one stair link
 SAME_LEVEL_M = 0.3      # below this, two positions are on the same level
-ADDRESS = "Princeton University campus, Princeton, NJ (on-site test)"
+FALLBACK_ADDRESS = "Princeton University campus, Princeton, NJ"
 
 
 def _walls(model: dict) -> list[LineString]:
@@ -123,12 +123,14 @@ async def _build() -> dict[str, Any]:
     path3d = [{"x": tf(pts[n][0], pts[n][1])["x"], "y": round(pts[n][2] - z0, 3),
                "z": tf(pts[n][0], pts[n][1])["y"]} for n in path]
     heights = sorted(h for h in sg.room_heights if h)
+    scan_address = ((model.get("address") or {}).get("address") or "").strip()
+    scan_name = (model.get("name") or "").split(" - ")[-1].strip()
     loc = {"lat": float(geo["lat"]), "lon": float(geo["long"])} if geo else None
     return {
         "_note": "Built from a Matterport scan for the event. Do not commit or publish.",
         "id": BUILDING_ID,
-        "name": "Princeton test building",
-        "address": ADDRESS,
+        "name": scan_name or "Princeton test building",
+        "address": ", ".join(p for p in (scan_name, scan_address.removesuffix(", US") or FALLBACK_ADDRESS) if p),
         "location": loc,
         "timezone": "America/New_York",
         "floors": len(sg.floors),
@@ -149,13 +151,15 @@ async def _build() -> dict[str, Any]:
                                  for r in rooms],
                        "doors": [], "wall_height_m": round(heights[len(heights) // 2], 2) if heights else None},
         "path3d": path3d,
+        "mesh": {"model_id": ids["primary"], "min_x": minx, "max_y": maxy, "ref_z": z0,
+                 "rise_m": max(p["y"] for p in path3d)},
         "start_scan_point": labels.get(path[0]),
         "hazards_sample": [],
     }
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("princeton_building", 2)
+    key = cache.key_for("princeton_building", 4)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))

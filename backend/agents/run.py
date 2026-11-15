@@ -216,7 +216,7 @@ class PlanRun:
             rig_note = "Rig start simulated about 1.5 km away (app location was in another city)"
         outdoor: dict[str, Any] = {"staging": staging, "entrance": entrance["location"],
                                    "flags": flags, "route": [], "eta_minutes": None,
-                                   "distance_km": None, "maneuvers": []}
+                                   "distance_km": None, "maneuvers": [], "route_note": None}
         meta: dict[str, Any] = {}
         if rig:
             r = drive_route(rig, staging)
@@ -225,6 +225,7 @@ class PlanRun:
                 eta_minutes=max(1, math.ceil(r["minutes"])),
                 distance_km=r["km"],
                 maneuvers=r.get("maneuvers", []),
+                route_note=r.get("rules_note"),
             )
             meta = {k: r.get(k) for k in ("source", "confidence", "request_url", "note", "minutes")}
             if rig_note:
@@ -295,6 +296,7 @@ class PlanRun:
             "elevator_ok": used_elevator,
             "floor_plan_image_url": None,
             "wall_height_m": fp.get("wall_height_m"),
+            "mesh_url": f"/scan-mesh/{self.building['id']}/manifest" if self.building.get("mesh") else None,
             "path3d": self.building.get("path3d") or [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path],
             "ar_route": _ar_route(self.building.get("path3d")
                                   or [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path]),

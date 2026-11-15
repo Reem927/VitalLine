@@ -27,7 +27,7 @@ struct HistoryView: View {
             .padding()
         }
         .navigationTitle("History")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: UUID.self) { id in
             if let entry = history.entries.first(where: { $0.id == id }) {
                 HistoryDetailView(entry: entry)

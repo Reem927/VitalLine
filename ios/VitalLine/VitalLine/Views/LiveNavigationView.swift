@@ -2,9 +2,10 @@ import SwiftUI
 import MapKit
 
 // Screen 3: Live Navigation. A simulated drive along the backend's Valhalla route:
-// the camera follows the rig with the route ahead, a banner shows the next turn, and the
-// six agents tick off live underneath as each one actually finishes. The crew can preview
-// the plan before arrival. On arrival the app moves to the indoor plan.
+// the map fills the screen and follows the rig, a banner shows the next turn, and a slim
+// bottom bar shows ETA, distance and arrival time. The six agents sit in a dropdown that
+// ticks off live as each one actually finishes. The crew can preview the plan before arrival.
+// On arrival the app moves to the indoor plan.
 struct LiveNavigationView: View {
     @Environment(PlanStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -16,6 +17,7 @@ struct LiveNavigationView: View {
     @State private var camera: MapCameraPosition = .automatic
     @State private var paused = false
     @State private var showPreview = false
+    @State private var showAgents = false            // dropdown, closed by default
     @State private var arrived = false
 
     var body: some View {
@@ -39,37 +41,37 @@ struct LiveNavigationView: View {
 
     private func drive(_ outdoor: Outdoor, _ geo: RouteGeometry) -> some View {
         let here = geo.point(at: progress)
-        let heading = geo.heading(at: progress)
         let next = nextManeuver(outdoor, geo: geo)
 
-        return VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                Map(position: $camera) {
-                    MapPolyline(coordinates: outdoor.route.map(\.coordinate))
-                        .stroke(.brandPrimary.opacity(0.35), lineWidth: 8)
-                    MapPolyline(coordinates: geo.remaining(from: progress))
-                        .stroke(.brandPrimary, lineWidth: 8)
-                    Annotation("", coordinate: here) {
-                        Image(systemName: "location.north.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(.brandPrimary, in: Circle())
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                    }
-                    Marker("Entrance", systemImage: "door.left.hand.open",
-                           coordinate: outdoor.entrance.coordinate)
-                        .tint(.success)
+        return ZStack {
+            Map(position: $camera) {
+                MapPolyline(coordinates: outdoor.route.map(\.coordinate))
+                    .stroke(.brandPrimary.opacity(0.35), lineWidth: 8)
+                MapPolyline(coordinates: geo.remaining(from: progress))
+                    .stroke(.brandPrimary, lineWidth: 8)
+                Annotation("", coordinate: here) {
+                    Image(systemName: "location.north.fill")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.brandPrimary, in: Circle())
+                        .overlay(Circle().stroke(.white, lineWidth: 2))
                 }
-                .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-                .onAppear { follow(here, heading) }
-                .onChange(of: progress) { follow(geo.point(at: progress), geo.heading(at: progress)) }
-
-                banner(next, arrivedText: arrived ? "Arrived at \(store.dispatch?.address ?? "destination")" : nil)
-                    .padding()
+                Marker("Entrance", systemImage: "door.left.hand.open",
+                       coordinate: outdoor.entrance.coordinate)
+                    .tint(.success)
             }
+            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+            .onAppear { follow(here, geo.heading(at: progress)) }
+            .onChange(of: progress) { follow(geo.point(at: progress), geo.heading(at: progress)) }
+            .ignoresSafeArea(edges: .bottom)
 
-            panel(outdoor)
+            VStack(spacing: 0) {
+                banner(next, arrivedText: arrived ? "Arrived at \(store.dispatch?.address ?? "destination")" : nil)
+                    .padding(.horizontal).padding(.top, 8)
+                Spacer()
+                bottomBar(outdoor)
+            }
         }
         .task(id: paused) { await run(geo) }
     }
@@ -97,7 +99,7 @@ struct LiveNavigationView: View {
         store.markArrivedAtBuilding()
     }
 
-    // MARK: - Banner and panel
+    // MARK: - Turn banner
 
     private func nextManeuver(_ outdoor: Outdoor, geo: RouteGeometry) -> (text: String, meters: Double, type: Int?)? {
         guard let maneuvers = outdoor.maneuvers, !maneuvers.isEmpty else { return nil }
@@ -124,52 +126,110 @@ struct LiveNavigationView: View {
         }
         .foregroundStyle(.white)
         .padding()
-        .background(Color.success.opacity(0.95), in: RoundedRectangle(cornerRadius: 16))
+        .background(Color(hex: 0x0B6B5E), in: RoundedRectangle(cornerRadius: 16))
+        .shadow(radius: 6, y: 2)
     }
 
-    private func panel(_ outdoor: Outdoor) -> some View {
+    // MARK: - Bottom bar
+
+    private func bottomBar(_ outdoor: Outdoor) -> some View {
         let etaMin = Double(outdoor.etaMinutes ?? 0) * (1 - progress)
         let km = (outdoor.distanceKm ?? 0) * (1 - progress)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(arrived ? "Arrived" : "\(Int(etaMin.rounded(.up))) min")
-                        .font(.title2.bold()).foregroundStyle(.success)
-                    Text(arrived ? "Building entrance" :
-                            "\(String(format: "%.1f", km)) km · arrive \(arrivalTime(etaMin))")
-                        .font(.caption).foregroundStyle(.textSecondary)
-                }
-                Spacer()
-                if !arrived {
-                    Button(paused ? "Resume" : "Pause") { paused.toggle() }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .frame(width: 110)
-                }
-            }
-            Text("Simulated drive · \(speedText(outdoor))")
-                .font(.caption2).foregroundStyle(.textSecondary)
+        let doneCount = store.tasks.filter(\.isDone).count
 
-            AgentTicksView(tasks: store.tasks, done: store.agentsDone)
+        return VStack(alignment: .leading, spacing: 10) {
+            // Agents dropdown: closed shows a one-line status, open shows every step.
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showAgents.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    if store.agentsDone {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.success)
+                    } else if store.tasks.contains(where: \.isFailed) {
+                        Image(systemName: "xmark.octagon.fill").foregroundStyle(.critical)
+                    } else {
+                        ProgressView().tint(.brandPrimary).scaleEffect(0.8)
+                    }
+                    Text(store.agentsDone ? "Plan ready" : "Agents planning…")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.textPrimary)
+                    Text("\(doneCount)/\(max(store.tasks.count, 6))")
+                        .font(.caption).foregroundStyle(.textSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.textSecondary)
+                        .rotationEffect(.degrees(showAgents ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showAgents {
+                AgentTicksView(tasks: store.tasks)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             if let message = store.errorMessage, !store.isPlanning {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote).foregroundStyle(.critical)
             }
 
-            HStack(spacing: 12) {
-                Button("Preview Plan") { showPreview = true }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(store.plan == nil)
-                    .opacity(store.plan == nil ? 0.4 : 1)
-                Button(arrived ? "Indoor Plan" : "Skip to Arrival") {
+            Divider().overlay(Color.textSecondary.opacity(0.25))
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(arrived ? "Arrived" : "\(Int(etaMin.rounded(.up))) min")
+                        .font(.title2.bold()).foregroundStyle(.success)
+                    Text(arrived ? "Building entrance" :
+                            "\(String(format: "%.1f", km)) km · \(arrivalTime(etaMin))")
+                        .font(.caption).foregroundStyle(.textSecondary)
+                }
+                Spacer()
+                Button {
+                    showPreview = true
+                } label: {
+                    Image(systemName: "list.bullet.rectangle.portrait")
+                        .font(.title3)
+                        .frame(width: 48, height: 48)
+                        .background(Color.midnight, in: Circle())
+                        .foregroundStyle(.brandPrimary)
+                }
+                .disabled(store.plan == nil)
+                .opacity(store.plan == nil ? 0.4 : 1)
+                .accessibilityLabel("Preview plan")
+
+                if !arrived {
+                    Button {
+                        paused.toggle()
+                    } label: {
+                        Image(systemName: paused ? "play.fill" : "pause.fill")
+                            .font(.title3)
+                            .frame(width: 48, height: 48)
+                            .background(Color.midnight, in: Circle())
+                            .foregroundStyle(.brandPrimary)
+                    }
+                    .accessibilityLabel(paused ? "Resume drive" : "Pause drive")
+                }
+
+                Button(arrived ? "Indoor Plan" : "Arrive") {
                     if arrived { router.push(.indoorPlan) } else { progress = 1; arrive() }
                 }
-                .buttonStyle(PrimaryButtonStyle())
+                .font(.headline)
+                .padding(.horizontal, 18).frame(height: 48)
+                .background(Color.brandPrimary, in: Capsule())
+                .foregroundStyle(Color.midnight)
                 .disabled(arrived && store.plan == nil)
             }
+
+            Text(footnote(outdoor))
+                .font(.caption2).foregroundStyle(.textSecondary)
         }
         .padding()
-        .background(Color.surface)
+        .background(
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
+                .fill(Color.surface)
+                .ignoresSafeArea(edges: .bottom)
+        )
         .onChange(of: arrived) { goIndoorWhenReady() }
         .onChange(of: store.agentsDone) { goIndoorWhenReady() }
     }
@@ -179,6 +239,12 @@ struct LiveNavigationView: View {
         if arrived, store.agentsDone, router.path.last == .liveNavigation {
             router.push(.indoorPlan)
         }
+    }
+
+    private func footnote(_ outdoor: Outdoor) -> String {
+        var parts = ["Simulated drive · \(speedText(outdoor))"]
+        if let note = outdoor.routeNote { parts.append(note) }
+        return parts.joined(separator: "\n")
     }
 
     // Valhalla maneuver types: 9-11 right, 14-16 left, 4-6 destination, others straight.
@@ -225,12 +291,9 @@ struct PlanPreviewSheet: View {
 // The six agents, each pending, then a spinner while it runs, then a tick when done.
 struct AgentTicksView: View {
     let tasks: [AgentTask]
-    let done: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(done ? "Plan Ready" : "Agents planning…")
-                .font(.headline).foregroundStyle(.textPrimary)
             ForEach(tasks) { task in
                 HStack(spacing: 10) {
                     Group {

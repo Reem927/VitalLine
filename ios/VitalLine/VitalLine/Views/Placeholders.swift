@@ -11,6 +11,8 @@ struct SettingsView: View {
     @Environment(PlanStore.self) private var store
     @Environment(AppRouter.self) private var router
     @AppStorage("scenarioId") private var scenarioId = "houston-cardiac-14"
+    @State private var confirmLogOut = false
+    @State private var showNoAccount = false
 
     var body: some View {
         List {
@@ -25,6 +27,24 @@ struct SettingsView: View {
             } footer: {
                 Text("Changing the scenario loads a new synthetic call on the Dispatch tab.")
             }
+            Section {
+                LabeledContent("Crew unit", value: Crew.unit)
+                    .listRowBackground(Color.surface)
+                Button("Log Out", role: .destructive) { confirmLogOut = true }
+                    .listRowBackground(Color.surface)
+            } header: {
+                Text("Account")
+            }
+        }
+        .confirmationDialog("Log out of VitalLine?", isPresented: $confirmLogOut, titleVisibility: .visible) {
+            // Sign-in is not connected yet: this is where the auth sign-out call goes.
+            Button("Log Out", role: .destructive) { showNoAccount = true }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Sign-in is not set up yet", isPresented: $showNoAccount) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Accounts will be connected later. Nothing was changed.")
         }
         .onChange(of: scenarioId) {
             router.popToRoot()
@@ -32,6 +52,7 @@ struct SettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
         .vitalScreen()
     }
 }

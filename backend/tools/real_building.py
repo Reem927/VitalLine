@@ -65,7 +65,8 @@ def _floor_plan(sg, path: dict, floor: int) -> tuple[dict, list[dict]]:
     heights = sorted(h for h in (sg.room_heights or []) if h)
     fp = {"floor": floor, "width_m": round(max(xs) - minx, 2), "height_m": round(maxy - min(ys), 2),
           "rooms": rooms, "doors": doors,
-          "wall_height_m": round(heights[len(heights) // 2], 2) if heights else None}
+          "wall_height_m": round(heights[len(heights) // 2], 2) if heights else None,
+          "origin": {"min_x": minx, "max_y": maxy}}
     points = [tf(w["x"], w["y"]) for w in path["waypoints"]]
     return fp, points
 
@@ -158,13 +159,15 @@ async def _build() -> dict[str, Any]:
         "edges": edges,
         "floor_plan": fp,
         "hazards_sample": [],
+        "mesh": {"model_id": ids["unit_203"], **fp["origin"],
+                 "ref_z": unit_path["waypoints"][0]["z"], "rise_m": 0.0},
         "facts": {"costar": facts, "unit_equipment_ok": unit_ok, "corridor_straight_m": straight,
                   "corridor_upper_m": corridor_upper},
     }
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("real_building", BUILDING_ID, 5)
+    key = cache.key_for("real_building", BUILDING_ID, 6)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))

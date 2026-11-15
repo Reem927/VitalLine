@@ -19,8 +19,8 @@ def _real() -> dict[str, Any]:
             "floor": int(cfg["patient_floor"]), "unit": str(cfg["patient_unit"]), "priority": "High"}
 
 
-_PRINCETON = {"building_id": "princeton-live", "incident_type": "Medical call (on-site AR test)",
-              "floor": 2, "unit": "upper level", "priority": "High"}
+_PRINCETON = {"building_id": "princeton-live", "incident_type": "Cardiac arrest",
+              "floor": 2, "unit": "upper landing", "priority": "High"}
 
 
 def _scenario(scenario_id: str) -> dict[str, Any]:

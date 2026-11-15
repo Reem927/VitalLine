@@ -17,6 +17,11 @@ struct Plan: Codable {
     let brief: [String]
 }
 
+// "Floor 2, Unit 203" for numbered units, "Floor 2, upper landing" for named places.
+func placeText(floor: Int, unit: String) -> String {
+    unit.first?.isNumber == true ? "Floor \(floor), Unit \(unit)" : "Floor \(floor), \(unit)"
+}
+
 struct DispatchInfo: Codable {
     let address: String
     let floor: Int
@@ -58,6 +63,7 @@ struct Outdoor: Codable {
     let etaMinutes: Int?           // drive time rig -> entrance
     let distanceKm: Double?
     let maneuvers: [Maneuver]?     // turn-by-turn from Valhalla; nil in mock data
+    let routeNote: String?         // which driving rules the route used (emergency or ordinary)
 }
 
 // One turn instruction. shapeIndex is where it begins in `route`.
@@ -127,6 +133,7 @@ struct Indoor: Codable {
     let path3d: [Point3]?          // path in the plan frame, for the 3D view
     let arRoute: [Point3]?         // path in the AR frame, for AR navigation
     let legs: [Leg]?
+    let meshUrl: String?           // backend path of the real scan mesh manifest, if any
 }
 
 struct Step: Codable, Identifiable {

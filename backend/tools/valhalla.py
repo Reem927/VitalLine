@@ -8,6 +8,7 @@ Results are cached under data/cache.
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 import httpx
@@ -56,6 +57,12 @@ def drive_route(origin: dict[str, float], dest: dict[str, float]) -> dict[str, A
     truck = {"height": round(v["height_m"], 2), "width": round(v["width_m"], 2)}
     if v.get("length_m"):
         truck["length"] = round(v["length_m"], 2)
+    # Emergency driving: an ambulance responding with lights and siren may, with due care,
+    # go against one-way streets and turn restrictions. Set EMERGENCY_ROUTING=0 to route as
+    # ordinary traffic. The plan labels the route either way and the crew decides.
+    emergency = os.getenv("EMERGENCY_ROUTING", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if emergency:
+        truck.update(ignore_oneways=True, ignore_restrictions=True)
     body = {
         "locations": [{"lat": origin["lat"], "lon": origin["lon"]},
                       {"lat": dest["lat"], "lon": dest["lon"]}],
@@ -90,6 +97,9 @@ def drive_route(origin: dict[str, float], dest: dict[str, float]) -> dict[str, A
                 "shape": shape,
                 "maneuvers": maneuvers,
                 "vehicle": {"source": v["source"], **truck},
+                "rules_note": ("Emergency route: one-way streets and turn restrictions ignored. "
+                               "Crew decides; drive with due care." if emergency
+                               else "Route follows ordinary traffic rules."),
                 "source": "valhalla",
                 "request_url": url,
                 "confidence": "medium",   # no live traffic in Valhalla

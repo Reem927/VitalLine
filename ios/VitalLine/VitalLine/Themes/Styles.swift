@@ -18,6 +18,7 @@ extension View {
             .background(Color.midnight)
             .toolbarBackground(Color.midnight, for: .navigationBar, .tabBar)
             .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            .toolbarColorScheme(.dark, for: .navigationBar, .tabBar)
     }
 }
 

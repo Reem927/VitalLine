@@ -11,7 +11,7 @@ import json
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents.planner import get_job, start_job
@@ -88,8 +88,31 @@ def create_app(store: Store | None = None) -> FastAPI:
     def health() -> dict[str, Any]:
         s = get_settings()
         return {"ok": True, "agents": s.use_agents, "model": s.model_name if s.use_agents else None,
-                "store": "supabase" if s.use_supabase else "sqlite",
+                "store": type(st()).__name__.removesuffix("Store").lower(),
                 "wolfram": bool(s.wolfram_app_id), "offline": s.offline}
+
+    # -- real scan mesh for the 3D plan view -----------------------------------
+
+    @app.get("/scan-mesh/{building_id}/manifest")
+    def scan_mesh_manifest(building_id: str) -> dict[str, Any]:
+        """Files of the converted scan mesh. First call builds it (can take a minute)."""
+        from tools import scan_mesh
+        try:
+            mesh = load_building(building_id).get("mesh")
+        except KeyError:
+            raise HTTPException(404, "unknown building") from None
+        info = scan_mesh.build(building_id, **mesh) if mesh else None
+        if info is None:
+            raise HTTPException(404, "no scan mesh for this building")
+        return info
+
+    @app.get("/scan-mesh/{building_id}/{name}")
+    def scan_mesh_file(building_id: str, name: str) -> FileResponse:
+        from tools import scan_mesh
+        info = scan_mesh.manifest(building_id)
+        if info is None or name not in info["files"]:
+            raise HTTPException(404, "unknown mesh file")
+        return FileResponse(scan_mesh.mesh_dir(building_id) / name)
 
     # -- app contract v1 -------------------------------------------------------
 
