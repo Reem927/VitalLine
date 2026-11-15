@@ -14,6 +14,9 @@ def load_building(building_id: str = "demo-tower") -> dict[str, Any]:
     if building_id == "houston-dunlavy":
         from tools import real_building
         return real_building.build()
+    if building_id == "princeton-live":
+        from tools import princeton_building
+        return princeton_building.build()
     data = json.loads(get_settings().building_fixture.read_text())
     if data["id"] != building_id:
         raise KeyError(f"unknown building {building_id}")

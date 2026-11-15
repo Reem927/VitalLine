@@ -153,7 +153,7 @@ async def _build() -> dict[str, Any]:
         "elevators": [{"id": "E1", "label": "Elevator (car size assumed: code minimum)",
                        "car_depth_in": CODE_MIN_CAR_IN[0], "car_width_in": CODE_MIN_CAR_IN[1],
                        "in_service": True, "source": "CoStar: passenger elevator exists; size assumed"}],
-        "stairs": [{"id": "S1", "label": "scanned staircase"}],
+        "stairs": [{"id": "S1", "label": "stair core"}],
         "nodes": nodes,
         "edges": edges,
         "floor_plan": fp,

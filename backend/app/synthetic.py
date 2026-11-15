@@ -19,7 +19,13 @@ def _real() -> dict[str, Any]:
             "floor": int(cfg["patient_floor"]), "unit": str(cfg["patient_unit"]), "priority": "High"}
 
 
+_PRINCETON = {"building_id": "princeton-live", "incident_type": "Medical call (on-site AR test)",
+              "floor": 2, "unit": "upper level", "priority": "High"}
+
+
 def _scenario(scenario_id: str) -> dict[str, Any]:
+    if scenario_id == "princeton-live":
+        return _PRINCETON
     # "houston-cardiac-14" is the id the app sends today; it now means the real building.
     # Offline (tests, no network) always uses the synthetic tower.
     from app.settings import get_settings
@@ -30,7 +36,7 @@ def _scenario(scenario_id: str) -> dict[str, Any]:
     raise KeyError(scenario_id)
 
 
-SCENARIOS = ("houston-demo", "houston-cardiac-14", "synthetic-tower")
+SCENARIOS = ("houston-demo", "houston-cardiac-14", "synthetic-tower", "princeton-live")
 
 
 def make_dispatch(scenario_id: str, crew_location: dict[str, float] | None) -> dict[str, Any]:

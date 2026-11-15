@@ -10,7 +10,10 @@ enum API {
     #else
     static let baseURL = URL(string: "https://YOUR-TUNNEL-URL.trycloudflare.com")!
     #endif
-    static let scenarioId = "houston-cardiac-14"
+    // Picked in Settings: "houston-cardiac-14" (demo building) or "princeton-live" (on-site AR test).
+    static var scenarioId: String {
+        UserDefaults.standard.string(forKey: "scenarioId") ?? "houston-cardiac-14"
+    }
 
     // Where the rig starts. Fixed near the demo building so the route looks right
     // on stage; swap for the phone's GPS (CoreLocation) if you have time.
