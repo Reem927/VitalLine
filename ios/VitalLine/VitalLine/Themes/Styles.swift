@@ -73,7 +73,7 @@ struct ElevatorToggle: View {
         .card()
         .sensoryFeedback(.impact, trigger: store.elevatorOut)
         .onChange(of: store.elevatorOut) {
-            Task { await store.load() }
+            Task { await store.replan() }   // agents re-plan; progress shows again
         }
     }
 }

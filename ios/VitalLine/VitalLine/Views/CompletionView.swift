@@ -27,7 +27,7 @@ struct CompletionView: View {
             Spacer()
 
             Button("Yes") {
-                if let plan = store.plan { history.save(plan) }
+                if let plan = store.plan { history.save(plan, events: store.events) }
                 router.popToRoot()
                 router.selectedTab = .history
             }

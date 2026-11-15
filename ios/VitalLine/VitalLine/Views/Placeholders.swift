@@ -10,18 +10,59 @@ struct LiveNavigationView: View {
     @Environment(AppRouter.self) private var router
 
     var body: some View {
-        VStack(spacing: 16) {
-            if let plan = store.plan {
-                RouteMapView(outdoor: plan.outdoor)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let outdoor = store.outdoor {
+                    RouteMapView(outdoor: outdoor)
+                        .frame(height: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+
+                // Agent progress (Person B: AgentProgressView replaces this block)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(store.agentsDone ? "Plan Ready" : "Creating Plan…")
+                        .font(.headline)
+                        .foregroundStyle(.textPrimary)
+                    ForEach(store.tasks) { task in
+                        HStack(spacing: 10) {
+                            if task.isDone {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.success)
+                            } else if task.isFailed {
+                                Image(systemName: "xmark.octagon.fill").foregroundStyle(.critical)
+                            } else if task.isRunning {
+                                ProgressView().tint(.brandPrimary)
+                            } else {
+                                Image(systemName: "circle").foregroundStyle(.textSecondary)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(task.title).foregroundStyle(.textPrimary)
+                                if let detail = task.detail {
+                                    Text(detail).font(.caption).foregroundStyle(.textSecondary)
+                                }
+                            }
+                        }
+                        .animation(.default, value: task.status)
+                    }
+                    if let message = store.errorMessage, !store.isPlanning {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.critical)
+                        Button("Retry") { Task { await store.replan() } }
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
+                }
+                .card()
+
+                Button("View Indoor Plan") {
+                    store.markArrivedAtBuilding()
+                    router.push(.indoorPlan)
+                }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!store.agentsDone)
+                    .opacity(store.agentsDone ? 1 : 0.4)
             }
-            Text("Placeholder: live navigation + agent progress")
-                .font(.footnote)
-                .foregroundStyle(.textSecondary)
-            Button("View Indoor Plan") { router.push(.indoorPlan) }
-                .buttonStyle(PrimaryButtonStyle())
+            .padding()
         }
-        .padding()
         .navigationTitle("Live Navigation")
         .navigationBarTitleDisplayMode(.inline)
         .vitalScreen()
@@ -44,21 +85,33 @@ struct IndoorPlanView: View {
 
                 ElevatorToggle()
 
+                if store.isPlanning {
+                    Label("Agents re-planning…", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.caution)
+                }
+
                 if let plan = store.plan {
                     if showFloorPlan {
-                        FloorPlanCanvas(indoor: plan.indoor)
-                            .frame(height: 320)
+                        FloorPlanCanvas(indoor: plan.indoor, showsPath: false)
+                            .frame(height: 360)
                             .card()
                     } else {
+                        FloorPlanCanvas(indoor: plan.indoor)
+                            .frame(height: 260)
+                            .card()
                         HeaderCard(plan: plan)
                         StepsView(steps: plan.steps).card()
                     }
                 }
-                Button("AR Navigation") {
-                    router.push(.arNavigation)
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                Button("Arrived at Patient") { router.push(.completed) }
+Button("AR Navigation") {
+    router.push(.arNavigation)
+}
+.buttonStyle(PrimaryButtonStyle())
+
+Button("Arrived at Patient") {
+    store.markAtPatient()
+    router.push(.completed)
+}
                     .buttonStyle(PrimaryButtonStyle())
             }
             .padding()
@@ -76,32 +129,6 @@ struct IndoorPlanView: View {
 //            .vitalScreen()
 //    }
 //}
-
-struct HistoryView: View {
-    @Environment(HistoryStore.self) private var history
-
-    var body: some View {
-        List {
-            if history.entries.isEmpty {
-                Text("No saved responses yet")
-                    .foregroundStyle(.textSecondary)
-            }
-            ForEach(history.entries) { entry in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.plan.dispatch.complaint).foregroundStyle(.textPrimary)
-                    Text(entry.plan.dispatch.address)
-                        .font(.caption).foregroundStyle(.textSecondary)
-                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption).foregroundStyle(.textSecondary)
-                }
-                .listRowBackground(Color.surface)
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .navigationTitle("History")
-        .vitalScreen()
-    }
-}
 
 struct SettingsView: View {
     var body: some View {

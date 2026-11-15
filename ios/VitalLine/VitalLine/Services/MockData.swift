@@ -11,6 +11,7 @@ enum MockData {
     "unit": "1404",
     "complaint": "Cardiac arrest (synthetic call)",
     "equipment": "stretcher",
+    "eta_minutes": 8,
     "priority": "High"
   },
   "building": {
@@ -362,6 +363,7 @@ enum MockData {
     "unit": "1404",
     "complaint": "Cardiac arrest (synthetic call)",
     "equipment": "stair_chair",
+    "eta_minutes": 8,
     "priority": "High"
   },
   "building": {
