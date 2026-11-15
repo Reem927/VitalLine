@@ -97,3 +97,6 @@ mp_out/
 *.dxf
 *.ply
 models_index.csv
+
+# Local demo config with sponsor identifiers: never commit
+*.local.json
