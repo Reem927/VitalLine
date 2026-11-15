@@ -39,7 +39,7 @@ struct BriefView: View {
                         .font(.system(.footnote, design: .monospaced))
                     Text("= \(verification.result)")
                         .font(.system(.footnote, design: .monospaced).bold())
-                    VerifiedBadge(verified: verification.verified)
+                    VerifiedBadge(verified: verification.verified, by: verification.verifiedBy)
                 }
                 .padding(.top, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)

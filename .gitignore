@@ -88,3 +88,7 @@ supabase/.env
 # Personal, never commit
 CLAUDE.md
 .claude/settings.local.json
+
+# Local event store
+data/vitalline.db
+data/*.db-journal

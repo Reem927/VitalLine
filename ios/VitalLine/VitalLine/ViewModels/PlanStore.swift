@@ -11,6 +11,7 @@ import Observation
 @Observable
 final class PlanStore {
     var dispatch: DispatchInfo?
+    var dispatchId: String?        // backend id; every log and plan job is filed under it
     var building: Building?
     var outdoor: Outdoor?
     var plan: Plan?
@@ -33,7 +34,9 @@ final class PlanStore {
         isLoading = true
         errorMessage = nil
         do {
-            dispatch = try await API.fetchDispatch()
+            let response = try await API.fetchDispatch()
+            dispatch = response.dispatch
+            dispatchId = response.dispatchId
             dispatchReceivedAt = .now
         } catch {
             errorMessage = error.localizedDescription
@@ -45,8 +48,8 @@ final class PlanStore {
     func startResponse() async {
         events = [
             ResponseEvent(kind: .dispatchReceived, date: dispatchReceivedAt ?? .now, text: "Dispatch received"),
-            ResponseEvent(kind: .enRoute, date: .now, text: "Acknowledged / En route"),
         ]
+        log(.enRoute, "Acknowledged / En route")
         building = nil
         outdoor = nil
         plan = nil
@@ -68,8 +71,20 @@ final class PlanStore {
     func markEnteredLobby()      { logOnce(.enteredLobby, "Entered lobby") }
     func markAtPatient()         { logOnce(.atPatient, "At patient") }
 
+    // "Completed! Save to History?" — the backend closes the call and stores the answer.
+    func complete(save: Bool) {
+        let id = dispatchId
+        Task { await API.complete(dispatchId: id, save: save) }
+    }
+
     private func log(_ kind: ResponseEvent.Kind, _ text: String) {
-        events.append(ResponseEvent(kind: kind, date: .now, text: text))
+        let event = ResponseEvent(kind: kind, date: .now, text: text)
+        events.append(event)
+        // dispatchReceived and routeUpdated are logged by the backend itself.
+        if let wire = kind.wireName {
+            let id = dispatchId
+            Task { await API.logEvent(dispatchId: id, kind: wire, at: event.date) }
+        }
     }
 
     private func logOnce(_ kind: ResponseEvent.Kind, _ text: String) {
@@ -82,7 +97,8 @@ final class PlanStore {
         errorMessage = nil
         tasks = []
         do {
-            for try await job in API.planUpdates(elevatorOut: elevatorOut, cached: cached) {
+            for try await job in API.planUpdates(elevatorOut: elevatorOut, cached: cached,
+                                                    dispatchId: dispatchId) {
                 tasks = job.tasks
                 if let b = job.building { building = b }
                 if let o = job.outdoor { outdoor = o }

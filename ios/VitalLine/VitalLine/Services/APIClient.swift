@@ -1,29 +1,36 @@
 import Foundation
 
 enum API {
-    // While the backend isn't ready, leave useMock = true. The app runs on MockData.
-    // When the backend is up, paste its tunnel URL here and set useMock = false.
-    static let useMock = true
+    // useMock = true runs the app on MockData with no backend.
+    // Simulator: talks to the backend on this Mac (cd backend && .venv/bin/uvicorn app.main:app).
+    // Phone: paste the tunnel URL below.
+    static let useMock = false
+    #if targetEnvironment(simulator)
+    static let baseURL = URL(string: "http://localhost:8000")!
+    #else
     static let baseURL = URL(string: "https://YOUR-TUNNEL-URL.trycloudflare.com")!
+    #endif
     static let scenarioId = "houston-cardiac-14"
 
     // Where the rig starts. Fixed near the demo building so the route looks right
     // on stage; swap for the phone's GPS (CoreLocation) if you have time.
     static let crewLocation = LatLon(lat: 29.7570, lon: -95.3640)
 
-    private static func request(elevatorOut: Bool) -> PlanRequest {
-        PlanRequest(scenarioId: scenarioId, elevatorOut: elevatorOut, crewLocation: crewLocation)
+    private static func request(elevatorOut: Bool, dispatchId: String? = nil) -> PlanRequest {
+        PlanRequest(scenarioId: scenarioId, elevatorOut: elevatorOut, crewLocation: crewLocation,
+                    dispatchId: dispatchId)
     }
 
     // MARK: Launch — POST /dispatch (the raw call; no agents)
 
-    static func fetchDispatch() async throws -> DispatchInfo {
+    // `dispatchId` links every later call (plan jobs, timeline, history) to this call.
+    static func fetchDispatch() async throws -> DispatchResponse {
         if useMock {
             try await Task.sleep(for: .milliseconds(400))
-            return try decode(DispatchResponse.self, from: mockJSON(false)).dispatch   // extra keys ignored
+            return try decode(DispatchResponse.self, from: mockJSON(false))   // extra keys ignored
         }
         let data = try await post("dispatch", body: request(elevatorOut: false))
-        return try decode(DispatchResponse.self, from: data).dispatch
+        return try decode(DispatchResponse.self, from: data)
     }
 
     // MARK: Agents — POST /plan/start, then poll GET /plan/{job_id}
@@ -31,7 +38,8 @@ enum API {
     // Yields an update every time an agent makes progress.
     // The last update has status "done" (with the full plan) or "error".
     // `cached` only affects the mock: location/outdoor finish instantly on a re-plan.
-    static func planUpdates(elevatorOut: Bool, cached: Bool) -> AsyncThrowingStream<PlanJob, Error> {
+    static func planUpdates(elevatorOut: Bool, cached: Bool,
+                            dispatchId: String? = nil) -> AsyncThrowingStream<PlanJob, Error> {
         AsyncThrowingStream { continuation in
             let work = Task {
                 do {
@@ -39,7 +47,7 @@ enum API {
                         try await mockAgents(elevatorOut: elevatorOut, cached: cached, continuation)
                     } else {
                         let start = try decode(StartJobResponse.self, from: try await post(
-                            "plan/start", body: request(elevatorOut: elevatorOut)))
+                            "plan/start", body: request(elevatorOut: elevatorOut, dispatchId: dispatchId)))
                         while true {
                             let job = try decode(PlanJob.self, from: try await get("plan/\(start.jobId)"))
                             continuation.yield(job)
@@ -54,6 +62,22 @@ enum API {
             }
             continuation.onTermination = { _ in work.cancel() }
         }
+    }
+
+    // MARK: Timeline — the backend keeps the traceable record for History
+
+    // kind: "en_route" | "arrived_at_building" | "entered_lobby" | "at_patient"
+    // Best effort: a failed log call never blocks the crew.
+    static func logEvent(dispatchId: String?, kind: String, at date: Date) async {
+        guard !useMock, let dispatchId else { return }
+        let body = CrewEventRequest(kind: kind, at: ISO8601DateFormatter().string(from: date))
+        _ = try? await post("dispatch/\(dispatchId)/events", body: body)
+    }
+
+    // "Completed! Save to History?" Yes / No.
+    static func complete(dispatchId: String?, save: Bool) async {
+        guard !useMock, let dispatchId else { return }
+        _ = try? await post("dispatch/\(dispatchId)/complete", body: CompleteRequest(save: save))
     }
 
     // MARK: Mock agents: same pattern as the real backend

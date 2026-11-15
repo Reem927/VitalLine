@@ -13,9 +13,23 @@ struct ResponseEvent: Identifiable {
     }
 
     let id = UUID()
+
     let kind: Kind
     let date: Date
     let text: String
 
     var isWarning: Bool { kind == .routeUpdated }
+}
+
+extension ResponseEvent.Kind {
+    // Name sent to POST /dispatch/{id}/events. nil = the backend records it itself.
+    var wireName: String? {
+        switch self {
+        case .enRoute: "en_route"
+        case .arrivedAtBuilding: "arrived_at_building"
+        case .enteredLobby: "entered_lobby"
+        case .atPatient: "at_patient"
+        case .dispatchReceived, .routeUpdated: nil
+        }
+    }
 }
