@@ -164,3 +164,56 @@ def test_demo_token_is_required_when_set(store, monkeypatch):
     assert c.get("/history").status_code == 401
     assert c.get("/history", headers={"X-Demo-Token": "wrong"}).status_code == 401
     assert c.get("/history", headers={"X-Demo-Token": "test-token"}).status_code == 200
+
+
+def test_sign_in_flow_and_session_access(store, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app import auth
+    from app.main import create_app
+
+    accounts: dict[str, str] = {}
+
+    def fake_create(email, password):
+        if email in accounts:
+            raise auth.AuthError("An account with this email already exists.", 409)
+        accounts[email] = password
+
+    monkeypatch.setenv("DEMO_TOKEN", "team-code")
+    monkeypatch.setattr(auth, "enabled", lambda: True)
+    monkeypatch.setattr(auth, "_provider_create", fake_create)
+    monkeypatch.setattr(auth, "_provider_login", lambda e, p: accounts.get(e) == p)
+    monkeypatch.setattr(auth, "_path", lambda: tmp_path / "sessions.json")
+    c = TestClient(create_app(store))
+
+    body = {"email": "Crew@Example.com", "password": "long-enough-pw"}
+    assert c.post("/auth/signup", json=body).status_code == 403                    # no team code
+    assert c.post("/auth/signup", json={**body, "password": "short", "team_code": "team-code"}).status_code == 400
+    token = c.post("/auth/signup", json={**body, "team_code": "team-code"}).json()["token"]
+    assert c.post("/auth/signup", json={**body, "team_code": "team-code"}).status_code == 409
+
+    assert c.get("/history").status_code == 401                                   # no session
+    signed_in = {"Authorization": f"Bearer {token}"}
+    assert c.get("/history", headers=signed_in).status_code == 200
+    assert c.get("/auth/me", headers=signed_in).json() == {"email": "crew@example.com"}
+
+    assert c.post("/auth/login", json={**body, "password": "wrong-password"}).status_code == 401
+    token2 = c.post("/auth/login", json=body).json()["token"]
+    c.post("/auth/logout", headers={"Authorization": f"Bearer {token2}"})
+    assert c.get("/history", headers={"Authorization": f"Bearer {token2}"}).status_code == 401
+
+
+def test_history_full_returns_saved_plan_and_timeline(client):
+    d = client.post("/dispatch", json={"scenario_id": "houston-demo"}).json()
+    job = client.post("/plan/start", json={"scenario_id": "houston-demo", "dispatch_id": d["dispatch_id"]}).json()
+    assert client.get(f"/plan/{job['job_id']}").json()["status"] in ("running", "done")
+    import time
+    for _ in range(50):
+        if client.get(f"/plan/{job['job_id']}").json()["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert client.get("/history/full").json() == []                                # not saved yet
+    client.post(f"/dispatch/{d['dispatch_id']}/complete", json={"save": True})
+    rows = client.get("/history/full").json()
+    assert len(rows) == 1 and rows[0]["plan"]["dispatch"]["unit"] == "1404"
+    assert rows[0]["events"][0]["type"] == "dispatch_received"

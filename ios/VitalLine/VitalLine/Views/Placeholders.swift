@@ -10,13 +10,14 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(PlanStore.self) private var store
     @Environment(AppRouter.self) private var router
+    @Environment(AuthStore.self) private var auth
+    @Environment(HistoryStore.self) private var history
     @AppStorage("scenarioId") private var scenarioId = "houston-cardiac-14"
     @AppStorage("backendURL") private var backendURL = ""
     @AppStorage("demoToken") private var demoToken = ""
     @State private var connection: String?
     @State private var testing = false
     @State private var confirmLogOut = false
-    @State private var showNoAccount = false
 
     var body: some View {
         List {
@@ -63,6 +64,8 @@ struct SettingsView: View {
                 Text("Changing the scenario loads a new synthetic call on the Dispatch tab.")
             }
             Section {
+                LabeledContent("Signed in as", value: auth.email ?? "Guest (sign-in is off)")
+                    .listRowBackground(Color.surface)
                 LabeledContent("Crew unit", value: Crew.unit)
                     .listRowBackground(Color.surface)
                 Button("Log Out", role: .destructive) { confirmLogOut = true }
@@ -72,14 +75,16 @@ struct SettingsView: View {
             }
         }
         .confirmationDialog("Log out of VitalLine?", isPresented: $confirmLogOut, titleVisibility: .visible) {
-            // Sign-in is not connected yet: this is where the auth sign-out call goes.
-            Button("Log Out", role: .destructive) { showNoAccount = true }
+            Button("Log Out", role: .destructive) {
+                Task {
+                    await API.signOut()          // ends the session on the backend
+                    history.entries = []
+                    router.popToRoot()
+                    router.selectedTab = .dispatch
+                    auth.signOut()               // back to the sign-in screen
+                }
+            }
             Button("Cancel", role: .cancel) {}
-        }
-        .alert("Sign-in is not set up yet", isPresented: $showNoAccount) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Accounts will be connected later. Nothing was changed.")
         }
         .onChange(of: scenarioId) {
             router.popToRoot()

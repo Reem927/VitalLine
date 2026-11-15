@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from agents.planner import get_job, start_job
 from agents.run import dispatch_info
+from app import auth
 from app.history import access_times, build_history
 from app.settings import get_settings
 from app.synthetic import SCENARIOS, make_dispatch
@@ -58,6 +59,20 @@ class CompleteRequest(BaseModel):
     save: bool
 
 
+class Credentials(BaseModel):
+    email: str
+    password: str
+    team_code: str | None = None      # needed to create an account when DEMO_TOKEN is set
+
+
+OPEN_PATHS = {"/health", "/auth/login", "/auth/signup"}
+
+
+def _bearer(request: Request) -> str | None:
+    value = request.headers.get("authorization", "")
+    return value[7:].strip() if value.lower().startswith("bearer ") else None
+
+
 # ---------------------------------------------------------------- app
 
 
@@ -66,17 +81,47 @@ def create_app(store: Store | None = None) -> FastAPI:
                   description="Prototype, not a medical device. Synthetic dispatch data.")
     app.state.store = store or make_store(get_settings())
 
-    # Shared demo token: when DEMO_TOKEN is set, every request except /health must carry it
-    # in X-Demo-Token. Needed whenever the backend is reachable through a tunnel.
+    # Access check, active whenever DEMO_TOKEN is set (always set it before opening a tunnel).
+    # A request passes with a signed-in session (Authorization: Bearer ...) or with the shared
+    # demo token (X-Demo-Token). Health and sign-in stay open.
     demo_token = os.getenv("DEMO_TOKEN", "").strip()
 
     @app.middleware("http")
-    async def require_demo_token(request: Request, call_next):
-        if demo_token and request.url.path != "/health":
+    async def require_access(request: Request, call_next):
+        if demo_token and request.url.path not in OPEN_PATHS:
             sent = request.headers.get("x-demo-token", "")
-            if not hmac.compare_digest(sent.encode(), demo_token.encode()):
-                return JSONResponse({"detail": "missing or wrong X-Demo-Token"}, status_code=401)
+            token_ok = hmac.compare_digest(sent.encode(), demo_token.encode())
+            if not token_ok and auth.session_email(_bearer(request)) is None:
+                return JSONResponse({"detail": "sign in or send X-Demo-Token"}, status_code=401)
         return await call_next(request)
+
+    # -- sign-in ---------------------------------------------------------------
+
+    def _auth_call(fn, *args) -> Any:
+        try:
+            return fn(*args)
+        except auth.AuthError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=exc.status)
+
+    @app.post("/auth/signup")
+    def auth_signup(body: Credentials) -> Any:
+        return _auth_call(auth.sign_up, body.email, body.password, body.team_code)
+
+    @app.post("/auth/login")
+    def auth_login(body: Credentials) -> Any:
+        return _auth_call(auth.sign_in, body.email, body.password)
+
+    @app.get("/auth/me")
+    def auth_me(request: Request) -> Any:
+        email = auth.session_email(_bearer(request))
+        if email is None:
+            return JSONResponse({"detail": "not signed in"}, status_code=401)
+        return {"email": email}
+
+    @app.post("/auth/logout")
+    def auth_logout(request: Request) -> dict[str, Any]:
+        auth.end_session(_bearer(request))
+        return {"ok": True}
 
     def st() -> Store:
         return app.state.store
@@ -104,7 +149,7 @@ def create_app(store: Store | None = None) -> FastAPI:
         return {"ok": True, "agents": s.use_agents, "model": s.model_name if s.use_agents else None,
                 "store": type(st()).__name__.removesuffix("Store").lower(),
                 "wolfram": bool(s.wolfram_app_id), "offline": s.offline,
-                "token_required": bool(demo_token)}
+                "token_required": bool(demo_token), "auth": auth.enabled()}
 
     # -- real scan mesh for the 3D plan view -----------------------------------
 
@@ -218,6 +263,23 @@ def create_app(store: Store | None = None) -> FastAPI:
         return [{"dispatch_id": d["id"], "title": dispatch_info(d)["complaint"],
                  "address": d["address"], "created_at": d["created_at"]}
                 for d in st().list_dispatches(saved=True)]
+
+    @app.get("/history/full")
+    def history_full() -> list[dict[str, Any]]:
+        """Saved responses with their latest plan and crew timeline, newest first (History tab)."""
+        out = []
+        for d in st().list_dispatches(saved=True):
+            plans = st().list_plans(d["id"])
+            if not plans:
+                continue
+            events = [{"type": e["type"], "occurred_at": e["occurred_at"], "text": e["summary"]}
+                      for e in st().list_events(d["id"])
+                      if e["type"] in {"dispatch_received", "acknowledged", "arrived_building",
+                                       "entered_lobby", "route_updated", "at_patient"}]
+            out.append({"dispatch_id": d["id"], "crew_unit": d.get("responder"),
+                        "plan": plans[-1], "events": events})
+        out.sort(key=lambda r: r["events"][0]["occurred_at"] if r["events"] else "", reverse=True)
+        return out
 
     @app.get("/history/{dispatch_id}")
     def history_detail(dispatch_id: str) -> dict[str, Any]:

@@ -26,9 +26,11 @@ struct HistoryView: View {
             }
             .padding()
         }
+        .task { await history.refresh() }
+        .refreshable { await history.refresh() }
         .navigationTitle("History")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: UUID.self) { id in
+        .navigationDestination(for: String.self) { id in
             if let entry = history.entries.first(where: { $0.id == id }) {
                 HistoryDetailView(entry: entry)
             }

@@ -30,6 +30,9 @@ enum API {
         let token = (UserDefaults.standard.string(forKey: "demoToken") ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !token.isEmpty { request.setValue(token, forHTTPHeaderField: "X-Demo-Token") }
+        if let session = UserDefaults.standard.string(forKey: AuthStore.tokenKey) {
+            request.setValue("Bearer \(session)", forHTTPHeaderField: "Authorization")
+        }
         return request
     }
 
@@ -192,5 +195,69 @@ enum API {
             throw URLError(.badServerResponse)
         }
         return data
+    }
+
+    // MARK: Sign-in (POST /auth/login, /auth/signup) and saved history (GET /history/full)
+
+    struct AuthSession: Decodable { let email: String; let token: String }
+    struct AuthFailure: Error { let message: String }
+    struct Health: Decodable { let ok: Bool; let auth: Bool?; let tokenRequired: Bool? }
+    private struct AuthBody: Encodable { let email: String; let password: String; let teamCode: String? }
+    private struct ErrorBody: Decodable { let detail: String }
+    private struct Empty: Encodable {}
+
+    static func health() async -> Health? {
+        guard isConfigured else { return nil }
+        var request = URLRequest(url: baseURL.appendingPathComponent("health"))
+        request.timeoutInterval = 8
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+        return try? decode(Health.self, from: data)
+    }
+
+    static func sessionIsValid() async -> Bool? {
+        var request = authorized(URLRequest(url: baseURL.appendingPathComponent("auth/me")))
+        request.timeoutInterval = 8
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let code = (response as? HTTPURLResponse)?.statusCode else { return nil }
+        return code == 200 ? true : (code == 401 ? false : nil)
+    }
+
+    static func signIn(email: String, password: String, teamCode: String?,
+                       create: Bool) async -> Result<AuthSession, AuthFailure> {
+        guard isConfigured else { return .failure(AuthFailure(message: "Enter the backend address first.")) }
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        var request = URLRequest(url: baseURL.appendingPathComponent(create ? "auth/signup" : "auth/login"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try? encoder.encode(AuthBody(email: email, password: password, teamCode: teamCode))
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if (response as? HTTPURLResponse)?.statusCode == 200,
+               let session = try? decode(AuthSession.self, from: data) {
+                return .success(session)
+            }
+            let detail = (try? decode(ErrorBody.self, from: data))?.detail
+            return .failure(AuthFailure(message: detail ?? "Sign-in failed."))
+        } catch {
+            return .failure(AuthFailure(message: "Could not reach the backend. Check the address."))
+        }
+    }
+
+    static func signOut() async {
+        _ = try? await post("auth/logout", body: Empty())
+    }
+
+    struct HistoryRecord: Decodable {
+        struct Row: Decodable { let type: String; let occurredAt: String; let text: String }
+        let dispatchId: String
+        let crewUnit: String?
+        let plan: Plan
+        let events: [Row]
+    }
+
+    static func savedHistory() async throws -> [HistoryRecord] {
+        try decode([HistoryRecord].self, from: try await get("history/full"))
     }
 }
