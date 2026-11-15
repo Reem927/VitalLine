@@ -10,6 +10,7 @@ Every door carries a confidence:
   low    no width at all, code minimum assumed
 """
 
+import itertools
 import math
 import statistics
 from dataclasses import dataclass, field
@@ -100,13 +101,12 @@ def _short_side(poly: Polygon | None, dims: dict | None) -> float | None:
 
 def classify_door(opening: dict) -> tuple[float, bool, str, str]:
     """Width to use, whether it was measured, confidence, and source text."""
-    w, h = opening.get("width"), opening.get("height")
+    w = opening.get("width")
     if opening["type"] != "doorway":
         return w, True, "high", f"Matterport {opening['type']} (measured)"
     if not w:
         return eq.CODE_MIN_DOOR_M, False, "low", eq.CODE_MIN_DOOR_SOURCE
-    pw, ph = eq.PLACEHOLDER_DOOR
-    if abs(w - pw) < 1e-4:
+    if abs(w - eq.PLACEHOLDER_DOOR[0]) < 1e-4:
         return w, False, "medium", "Matterport default 36 in width (not measured)"
     return w, True, "high", "Matterport doorway (measured)"
 
@@ -137,12 +137,12 @@ def build(model: dict) -> ScanGraph:
             edge_rooms.setdefault(e["id"], []).append(r["id"])
 
     # Floor heights from scan points: the median scanner height of points inside each floor's rooms.
-    for fid in floors:
+    for fid, info in floors.items():
         zs = [p["position"]["z"] for p in model.get("panoLocations") or [] if p.get("position")
               and any(rm.floor_id == fid and rm.polygon is not None
                       and rm.polygon.contains(Point(p["position"]["x"], p["position"]["y"]))
                       for rm in rooms.values())]
-        floors[fid]["z"] = statistics.median(zs) if zs else None
+        info["z"] = statistics.median(zs) if zs else None
 
     for rid, rm in rooms.items():
         if rm.point:
@@ -246,7 +246,7 @@ def find_path(sg: ScanGraph, start_room: str, end_room: str, equipment_name: str
                           "label": sg.rooms[data["ref"]].label if data["kind"] == "room" else sg.doors[data["ref"]].kind})
         if data["kind"] == "door":
             doors_used.append(data["check"])
-    for u, v in zip(nodes, nodes[1:]):
+    for u, v in itertools.pairwise(nodes):
         e = g.edges[u, v]
         segments.append({"kind": e["kind"], "length_m": e["length"], "rise_m": e.get("rise_m")})
     return {
