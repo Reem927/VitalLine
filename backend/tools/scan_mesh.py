@@ -14,6 +14,8 @@ view reads as a cut-away. Large texture sets are skipped: the mesh is then sent 
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,11 @@ from connectors.costar_kit import _RangeFile
 from tools.wolfram import _run
 
 MAX_TEXTURE_BYTES = 40 * 2**20
+# Scan textures are 2048 px squares, about 16 MB each once loaded on a phone. They are scaled
+# down so a whole scan fits in memory. Bump MESH_VERSION when the output changes: the backend
+# rebuilds and the app downloads the new files.
+MESH_VERSION = 2
+DEFAULT_TEXTURE_PX = 1024
 TRIPOD_RANGE_M = (0.9, 1.9)     # scanner height above the floor it stands on
 CUT_ABOVE_FLOOR_M = 2.1
 
@@ -96,10 +103,16 @@ async def _pak_url(model_id: str) -> str | None:
     return asset["url"] if asset else None
 
 
+def _shrink(path: Path, max_px: int) -> None:
+    """Scale an image down in place with macOS sips. Left as is where sips is missing."""
+    if shutil.which("sips"):
+        subprocess.run(["sips", "-Z", str(max_px), str(path)], capture_output=True, check=False)
+
+
 def build(building_id: str, model_id: str, min_x: float, max_y: float, ref_z: float,
-          rise_m: float = 0.0) -> dict[str, Any] | None:
+          rise_m: float = 0.0, texture_px: int = DEFAULT_TEXTURE_PX) -> dict[str, Any] | None:
     """Fetch, convert and cache the mesh. Returns its manifest, or None if there is no MatterPak."""
-    if (hit := manifest(building_id)) is not None:
+    if (hit := manifest(building_id)) is not None and hit.get("version") == MESH_VERSION:
         return hit
     url = _run(_pak_url(model_id))
     if not url:
@@ -120,10 +133,12 @@ def build(building_id: str, model_id: str, min_x: float, max_y: float, ref_z: fl
         (out / "model.mtl").write_bytes(pak.read(mtl))
         for t in textures:
             (out / Path(t.filename).name).write_bytes(pak.read(t))
+            _shrink(out / Path(t.filename).name, texture_px)
             files.append(Path(t.filename).name)
     else:
         (out / "model.mtl").write_text("newmtl scan\nKd 0.72 0.76 0.82\nKa 0.2 0.2 0.2\n")
-    info = {"building_id": building_id, "files": files, "textured": textured,
+    info = {"building_id": building_id, "version": MESH_VERSION, "texture_px": texture_px,
+            "files": files, "textured": textured,
             "bytes": sum((out / f).stat().st_size for f in files), **stats,
             "source": "Matterport MatterPak mesh"}
     (out / "manifest.json").write_text(json.dumps(info))

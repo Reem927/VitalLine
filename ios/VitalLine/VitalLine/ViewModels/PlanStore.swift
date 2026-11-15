@@ -92,13 +92,20 @@ final class PlanStore {
         log(kind, text)
     }
 
+    // Only the newest run may update the screen. Starting a new run (Start Response again,
+    // Retry, the elevator toggle) makes any earlier one stop quietly.
+    private var runNumber = 0
+
     private func runAgents(cached: Bool) async {
+        runNumber += 1
+        let mine = runNumber
         isPlanning = true
         errorMessage = nil
         tasks = []
         do {
             for try await job in API.planUpdates(elevatorOut: elevatorOut, cached: cached,
                                                     dispatchId: dispatchId) {
+                guard mine == runNumber else { return }     // replaced by a newer run
                 tasks = job.tasks
                 if let b = job.building { building = b }
                 if let o = job.outdoor { outdoor = o }
@@ -109,8 +116,9 @@ final class PlanStore {
                 }
             }
         } catch {
+            guard mine == runNumber else { return }
             errorMessage = error.localizedDescription
         }
-        isPlanning = false
+        if mine == runNumber { isPlanning = false }
     }
 }
