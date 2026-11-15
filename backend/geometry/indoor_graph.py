@@ -69,6 +69,9 @@ class IndoorRoute:
         return (round(lo / 60, 1), round(hi / 60, 1))
 
 
+STAIRS_TIE_BREAK_S = 5.0   # route choice only; never added to displayed times
+
+
 class NoRoute(Exception):
     """No usable path with the given closures and equipment. Report as unknown, never guess."""
 
@@ -112,6 +115,9 @@ class BuildingGraph:
     def _graph(self, equipment: Equipment, out_of_service: set[str]) -> nx.DiGraph:
         g = nx.DiGraph()
         for edge in self.building["edges"]:
+            # Scan-checked edges list the equipment that fits their doors and turns.
+            if edge.get("equipment_ok") is not None and equipment.key not in edge["equipment_ok"]:
+                continue
             if edge["kind"] == "elevator":
                 car = self.elevators[edge["elevator"]]
                 if edge["elevator"] in out_of_service or not car["in_service"]:
@@ -123,7 +129,9 @@ class BuildingGraph:
             ):
                 continue
             seg = _segment_time(edge, equipment)
-            g.add_edge(edge["from"], edge["to"], edge=edge, seg=seg, weight=seg.seconds[1])
+            # Tie-breaker only: when times are close, prefer the elevator over carrying on stairs.
+            weight = seg.seconds[1] + (STAIRS_TIE_BREAK_S if edge["kind"] == "stairs" else 0.0)
+            g.add_edge(edge["from"], edge["to"], edge=edge, seg=seg, weight=weight)
         return g
 
     def route(self, entrance_id: str, equipment: Equipment,

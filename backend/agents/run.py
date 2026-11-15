@@ -147,14 +147,16 @@ class PlanRun:
 
     def _step_location(self) -> dict[str, Any]:
         b, geo = self.building, self.dispatch.get("geocode") or {}
-        source = "synthetic"
+        source = "CoStar" if b.get("source", "").startswith("CoStar") else "synthetic"
         return {
             "ok": True,
             "building": {"name": b["name"], "floors": b["floors"], "type": b["type"],
                          "source": source},
             "geocode_source": geo.get("source"),
             "geocode_url": geo.get("request_url"),
-            "detail": f"Synthetic: {b['name']}, {b['floors']} floors, {b['type'].lower()}",
+            "detail": (f"CoStar: {b['floors']} floors, {b['type'].split(',')[0].lower()}"
+                       if source == "CoStar"
+                       else f"Synthetic: {b['name']}, {b['floors']} floors, {b['type'].lower()}"),
         }
 
     def _step_outdoor(self) -> dict[str, Any]:
@@ -195,6 +197,7 @@ class PlanRun:
         route = self.route()
         parking, rejected = self._parking_for(route.entrance_id)
         ent = self.graph.entrances[route.entrance_id]
+        synthetic = not self.building.get("source", "").startswith("CoStar")
         notes = []
         if parking:
             clr = parking["clearance_ft"]
@@ -202,17 +205,17 @@ class PlanRun:
                 "id": "a1",
                 "text": f"Park: {parking['label']} ({parking['detail']})"
                         + (f", {clr:g} ft clearance" if clr else ""),
-                "confidence": "medium", "synthetic": True})
+                "confidence": "medium", "synthetic": synthetic})
         else:
             notes.append({"id": "a1", "text": "Parking unknown: no spot clears the rig",
-                          "confidence": "unknown", "synthetic": True})
+                          "confidence": "unknown", "synthetic": synthetic})
         notes.append({"id": "a2", "text": f"Entrance: {ent['label']}, {ent['detail']}",
-                      "confidence": "medium", "synthetic": True})
+                      "confidence": "medium", "synthetic": synthetic})
         for i, p in enumerate(rejected, start=3):
             notes.append({"id": f"a{i}",
                           "text": f"Avoid {p['label']} {p['detail']}: {p['clearance_ft']:g} ft "
                                   f"clearance, rig needs {AMBULANCE_HEIGHT_FT:g} ft",
-                          "confidence": "medium", "synthetic": True})
+                          "confidence": "medium", "synthetic": synthetic})
         detail = (f"Parking: {parking['label']} · " if parking else "Parking: unknown · ") + \
                  f"Entrance: {ent['detail'].split(',')[0]}"
         return {"ok": parking is not None, "access": notes, "parking": parking,
@@ -250,7 +253,7 @@ class PlanRun:
                   "seconds_max": math.ceil(s.seconds[1])} for s in route.steps]
         lo, hi = route.total_seconds
         time = {"min_seconds": math.floor(lo), "max_seconds": math.ceil(hi)}
-        corridor = next((s for s in route.steps if s.text.startswith("Corridor")), None)
+        corridor = next((s for s in route.steps if s.text.startswith("Corridor east ")), None)
         if used_elevator:
             dist = f" · {corridor.text.split('Corridor east ')[1]}" if corridor else ""
             detail = f"{route.vertical} fits {route.equipment.label.lower()}{dist}"
@@ -280,12 +283,12 @@ class PlanRun:
         checks.append({"name": "Door to patient max (s)", "expr": hi_all,
                        "claimed": indoor["time"]["max_seconds"], "tolerance": 1.0})
 
-        results = [wolfram.verify([{k: c[k] for k in ("name", "expr", "claimed")}],
-                                  tolerance=c["tolerance"]) for c in checks]
-        flat = [r["checks"][0] for r in results]
-        verified = all(r["verified"] for r in results)
-        by = "wolfram" if any(r["verified_by"] == "wolfram" for r in results) \
-            else "local_exact_arithmetic"
+        # One batched call: every check shares the same whole-second tolerance.
+        batch = wolfram.verify([{k: c[k] for k in ("name", "expr", "claimed")} for c in checks],
+                               tolerance=1.0)
+        flat = batch["checks"]
+        verified = batch["verified"]
+        by = batch["verified_by"]
         total = flat[-1]
         result_text = f"{total['local']:g} s" + ("" if by == "wolfram"
                                                   else " (exact arithmetic; Wolfram not configured)")

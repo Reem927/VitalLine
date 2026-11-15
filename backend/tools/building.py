@@ -1,4 +1,4 @@
-"""Building data. Today: the synthetic fixture. Later: CoStar / Matterport / Vexcel connectors."""
+"""Building data: the real demo building (CoStar + Matterport) or the synthetic fixture."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from app.settings import get_settings
 
 @lru_cache
 def load_building(building_id: str = "demo-tower") -> dict[str, Any]:
+    if building_id == "houston-dunlavy":
+        from tools import real_building
+        return real_building.build()
     data = json.loads(get_settings().building_fixture.read_text())
     if data["id"] != building_id:
         raise KeyError(f"unknown building {building_id}")
@@ -25,9 +28,15 @@ def find_building_for_address(address: str) -> dict[str, Any] | None:
 
 
 def nearby_hazards(building: dict[str, Any]) -> list[dict[str, Any]]:
-    """Road hazards near the destination.
-
-    Sample data labelled with its intended public source (TxDOT DriveTexas, Houston 311).
-    Swap for live connectors when keys and endpoints are confirmed.
-    """
-    return [{**h, "sample": True} for h in building.get("hazards_sample", [])]
+    """Hazards near the destination: sample road flags (labelled) plus live NWS weather alerts."""
+    flags = [{**h, "sample": True} for h in building.get("hazards_sample", [])]
+    if building.get("source", "").startswith("CoStar") and not get_settings().offline:
+        from connectors import nws
+        from tools.wolfram import _run
+        try:
+            alerts = _run(nws.alerts(building["location"]["lat"], building["location"]["lon"]))
+        except Exception:  # noqa: BLE001 - weather is optional context, never blocks a plan
+            alerts = []
+        flags += [{"kind": "weather", "title": a["headline"] or a["event"], "source": a["source"],
+                   "location": building["location"]} for a in alerts]
+    return flags
