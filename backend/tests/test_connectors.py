@@ -15,6 +15,8 @@ def test_wolfram_number_parses_outputs():
     assert wolfram.number("Out[1]= 92.") == 92.0
     assert wolfram.number("Out[1]= 1.5*^-3") == 0.0015
     assert wolfram.number("Out[1]= True") is None
+    noisy = "NMinimize::unproc: Could not process x = 3.\nGeneral::messages: note.\n\nOut[1]= 1.6749"
+    assert wolfram.number(noisy) == 1.6749
 
 
 def test_costar_summary_reads_nested_elevators_and_keeps_unknowns():

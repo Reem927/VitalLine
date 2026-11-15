@@ -44,8 +44,9 @@ async def evaluate(code: str) -> str:
 
 
 def number(output: str) -> float | None:
-    """The first number in a Wolfram output line, or None."""
-    body = output.split("=", 1)[-1]
+    """The first number in the last Out[...] line, or None. Ignores warning messages before it."""
+    outs = re.split(r"Out\[\d+\]=", output)
+    body = outs[-1] if len(outs) > 1 else output.split("=", 1)[-1]
     match = re.search(r"-?\d+(?:\.\d+)?(?:\*\^-?\d+)?", body)
     if not match:
         return None
