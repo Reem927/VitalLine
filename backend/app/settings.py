@@ -13,7 +13,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = BACKEND_DIR.parent
 load_dotenv(BACKEND_DIR / ".env")
 
-DEFAULT_MODEL = "google_genai:gemini-2.5-flash"
+DEFAULT_MODEL = "google_genai:gemini-3.6-flash"
 PUBLIC_VALHALLA = "https://valhalla1.openstreetmap.de"
 
 

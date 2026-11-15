@@ -18,7 +18,7 @@ DEMO_CONFIG_PATH = BACKEND_DIR / "config" / "demo_building.local.json"
 
 load_dotenv(BACKEND_DIR / ".env")
 
-DEFAULT_MODEL = "gemini-4-hydrogen"
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 
 def env(name: str, default: str | None = None) -> str | None:
