@@ -64,6 +64,22 @@ struct Outdoor: Codable {
     let distanceKm: Double?
     let maneuvers: [Maneuver]?     // turn-by-turn from Valhalla; nil in mock data
     let routeNote: String?         // which driving rules the route used (emergency or ordinary)
+    let aerial: Aerial?            // Vexcel aerial view with where to stop, if available
+}
+
+// Aerial image of the building. Marker positions are fractions of the image (0...1).
+struct Aerial: Codable {
+    let imageUrl: String
+    let widthM: Int
+    let markers: [AerialMarker]
+    let note: String?
+}
+
+struct AerialMarker: Codable {
+    let kind: String               // "stop" | "building"
+    let label: String
+    let fx: Double
+    let fy: Double
 }
 
 // One turn instruction. shapeIndex is where it begins in `route`.
@@ -134,6 +150,23 @@ struct Indoor: Codable {
     let arRoute: [Point3]?         // path in the AR frame, for AR navigation
     let legs: [Leg]?
     let meshUrl: String?           // backend path of the real scan mesh manifest, if any
+    let nav: Nav?                  // walkable graph for live AR re-routing, if the scan has one
+    let lobbyWalk: LobbyWalk?      // the entrance scan, walked before the unit in the walkthrough
+}
+
+// A separate scan of the building entrance with its own route, in that scan's own frame.
+struct LobbyWalk: Codable {
+    let label: String
+    let meshUrl: String
+    let path3d: [Point3]
+}
+
+// Walkable graph of the scanned space, in the plan frame (metres; x, y up, z).
+struct Nav: Codable {
+    let nodes: [Point3]
+    let edges: [[Int]]             // pairs of node indices
+    let start: Int                 // suggested starting point
+    let goal: Int                  // the patient's point
 }
 
 struct Step: Codable, Identifiable {

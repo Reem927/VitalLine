@@ -157,10 +157,13 @@ def create_app(store: Store | None = None) -> FastAPI:
     def scan_mesh_manifest(building_id: str) -> dict[str, Any]:
         """Files of the converted scan mesh. First call builds it (can take a minute)."""
         from tools import scan_mesh
+        # "<building>--<part>" names an extra scan of the same building, e.g. the entrance scan.
+        base, _, part = building_id.partition("--")
         try:
-            mesh = load_building(building_id).get("mesh")
+            building = load_building(base)
         except KeyError:
             raise HTTPException(404, "unknown building") from None
+        mesh = (building.get("meshes") or {}).get(part) if part else building.get("mesh")
         info = scan_mesh.build(building_id, **mesh) if mesh else None
         if info is None:
             raise HTTPException(404, "no scan mesh for this building")
@@ -173,6 +176,15 @@ def create_app(store: Store | None = None) -> FastAPI:
         if info is None or name not in info["files"]:
             raise HTTPException(404, "unknown mesh file")
         return FileResponse(scan_mesh.mesh_dir(building_id) / name)
+
+    @app.get("/aerial/{building_id}/image")
+    def aerial_image(building_id: str) -> FileResponse:
+        """Vexcel aerial image for the plan's outside view (built during the outdoor step)."""
+        from tools import aerial
+        path = aerial.image_path(building_id)
+        if "/" in building_id or not path.exists():
+            raise HTTPException(404, "no aerial image for this building")
+        return FileResponse(path, media_type="image/jpeg")
 
     # -- app contract v1 -------------------------------------------------------
 

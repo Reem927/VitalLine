@@ -13,6 +13,9 @@ struct Plan3DView: View {
     @State private var scene: SCNScene
     @State private var camera: SCNNode
     @State private var meshState = MeshState.none
+    @State private var walking = false     // first-person walkthrough along the route
+    @State private var stage: String?      // which part of the walkthrough is playing
+    @State private var lobbyReady = false  // the entrance scan has loaded
 
     enum MeshState: Equatable { case none, loading, shown, failed }
 
@@ -39,12 +42,45 @@ struct Plan3DView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
 
             if let badge {
-                Text(badge)
+                Text(walking ? "WALKTHROUGH · SIMULATED CAMERA IN THE REAL SCAN" : badge)
                     .font(.caption2.bold())
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(.black.opacity(0.55), in: Capsule())
                     .foregroundStyle(.white)
                     .padding(10)
+            }
+
+            // First-person preview for when the crew is not on site: the camera walks the
+            // route at eye height inside the scan. It is a simulation, not live AR.
+            Button {
+                walking.toggle()
+                if walking {
+                    let gap = (indoor.legs ?? []).filter { !$0.real }.map(\.text).joined(separator: "\n")
+                    PlanScene.startWalk(camera, indoor, includeLobby: lobbyReady,
+                                        gapText: gap.isEmpty ? "Elevator and corridor: not scanned" : gap) { stage = $0 }
+                } else {
+                    stage = nil
+                    PlanScene.resetCamera(camera, indoor)
+                }
+            } label: {
+                Label(walking ? "Overview" : "Walk the route", systemImage: walking ? "cube" : "figure.walk")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.brandPrimary, in: Capsule())
+                    .foregroundStyle(Color.midnight)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(10)
+
+            if walking, let stage {
+                Text(stage)
+                    .font(.caption.weight(.semibold))
+                    .multilineTextAlignment(.leading)
+                    .padding(10)
+                    .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(.leading, 10).padding(.bottom, 10).padding(.trailing, 150)
             }
         }
         .task { await loadMesh() }
@@ -66,6 +102,11 @@ struct Plan3DView: View {
             let node = try await ScanMesh.load(manifestPath: path)
             PlanScene.showMesh(node, in: scene)
             meshState = .shown
+            // The entrance scan is a separate scan: load it for the walkthrough's first part.
+            if let lobby = indoor.lobbyWalk, let entrance = try? await ScanMesh.load(manifestPath: lobby.meshUrl) {
+                PlanScene.addLobby(entrance, path: lobby.path3d, in: scene)
+                lobbyReady = true
+            }
         } catch {
             meshState = .failed
         }
@@ -176,6 +217,7 @@ enum PlanScene {
             root.addChildNode(sphere(at: pts.first!, color: .systemGreen, radius: 0.18))
             root.addChildNode(sphere(at: pts.last!, color: .systemRed, radius: 0.24))
             root.addChildNode(walker(along: pts))
+            root.addChildNode(chevrons(along: pts))
         }
 
         let light = SCNNode()
@@ -192,6 +234,105 @@ enum PlanScene {
         scene.rootNode.childNode(withName: "outlines", recursively: false)?.isHidden = true
         scene.rootNode.childNode(withName: "scanMesh", recursively: false)?.removeFromParentNode()
         scene.rootNode.addChildNode(mesh)
+    }
+
+    private static func routePoints(_ indoor: Indoor) -> [SCNVector3] {
+        (indoor.path3d?.map { SCNVector3(Float($0.x), Float($0.y), Float($0.z)) })
+            ?? indoor.path.map { SCNVector3(Float($0.x), 0, Float($0.y)) }
+    }
+
+    // Walk the camera along the route at eye height, looking where it is going.
+    // The entrance scan sits far to the side of the unit scan: the two scans have separate
+    // frames, so they are shown one after the other, never as one joined model.
+    static let lobbyOffset: Float = -200
+
+    @MainActor
+    static func addLobby(_ mesh: SCNNode, path: [Point3], in scene: SCNScene) {
+        scene.rootNode.childNode(withName: "lobby", recursively: false)?.removeFromParentNode()
+        let group = SCNNode()
+        group.name = "lobby"
+        group.position = SCNVector3(lobbyOffset, 0, 0)
+        mesh.name = "lobbyMesh"
+        group.addChildNode(mesh)
+        let pts = path.map { SCNVector3(Float($0.x), Float($0.y) + 0.15, Float($0.z)) }
+        for (a, b) in zip(pts, pts.dropFirst()) { group.addChildNode(tube(a, b)) }
+        group.addChildNode(chevrons(along: pts))
+        scene.rootNode.addChildNode(group)
+    }
+
+    // Walk the camera at eye height: the entrance scan first (when loaded), a pause for the
+    // parts with no scan, then the unit. onStage reports which part is playing.
+    static func startWalk(_ camera: SCNNode, _ indoor: Indoor, includeLobby: Bool, gapText: String,
+                          onStage: @escaping (String?) -> Void) {
+        let eye: Float = 1.5
+        let unit = routePoints(indoor).map { SCNVector3($0.x, $0.y + eye, $0.z) }
+        guard unit.count >= 2 else { return }
+        var lobby: [SCNVector3] = []
+        if includeLobby, let walk = indoor.lobbyWalk, walk.path3d.count >= 2 {
+            lobby = walk.path3d.map { SCNVector3(Float($0.x) + lobbyOffset, Float($0.y) + eye, Float($0.z)) }
+        }
+        camera.removeAllActions()
+        camera.constraints = nil
+        camera.camera?.fieldOfView = 75
+        camera.camera?.zNear = 0.05
+        camera.camera?.zFar = 80              // keeps the other scan out of view
+        func yaw(_ a: SCNVector3, _ b: SCNVector3) -> CGFloat { CGFloat(atan2(-(b.x - a.x), -(b.z - a.z))) }
+        func say(_ text: String?) -> SCNAction { .run { _ in DispatchQueue.main.async { onStage(text) } } }
+        func leg(_ pts: [SCNVector3]) -> [SCNAction] {
+            var out: [SCNAction] = [.move(to: pts[0], duration: 0),
+                                    .rotateTo(x: -0.12, y: yaw(pts[0], pts[1]), z: 0, duration: 0),
+                                    .wait(duration: 0.8)]
+            for (a, b) in zip(pts, pts.dropFirst()) {
+                let d = Double(simd_length(SIMD3<Float>(b.x - a.x, b.y - a.y, b.z - a.z)))
+                if d < 0.05 { continue }
+                out.append(.rotateTo(x: -0.12, y: yaw(a, b), z: 0, duration: 0.6, usesShortestUnitArc: true))
+                out.append(.move(to: b, duration: max(0.4, d / 0.8)))
+            }
+            return out
+        }
+        var actions: [SCNAction] = []
+        if !lobby.isEmpty {
+            actions += [say(indoor.lobbyWalk?.label)] + leg(lobby)
+            actions += [say("NOT SCANNED\n" + gapText), .wait(duration: 4)]
+        }
+        actions += [say("Inside the unit (scanned)")] + leg(unit) + [.wait(duration: 1.5)]
+        camera.runAction(.repeatForever(.sequence(actions)), forKey: "walk")
+    }
+
+    static func resetCamera(_ camera: SCNNode, _ indoor: Indoor) {
+        camera.removeAllActions()
+        let fresh = PlanScene.camera(indoor)
+        camera.camera?.fieldOfView = fresh.camera?.fieldOfView ?? 60
+        camera.camera?.zNear = 1
+        camera.camera?.zFar = 500
+        camera.transform = fresh.transform
+    }
+
+    // Flat chevrons on the floor along the route, like the AR arrows.
+    private static func chevrons(along pts: [SCNVector3]) -> SCNNode {
+        let group = SCNNode()
+        for (a, b) in zip(pts, pts.dropFirst()) {
+            let d = SIMD3<Float>(b.x - a.x, b.y - a.y, b.z - a.z)
+            let length = simd_length(d)
+            if length < 0.3 { continue }
+            let count = max(1, Int(length / 0.8))
+            for i in 0..<count {
+                let t = (Float(i) + 0.5) / Float(count)
+                let arrow = SCNNode()
+                for side in [Float(-1), 1] {
+                    let bar = SCNNode(geometry: SCNBox(width: 0.07, height: 0.01, length: 0.3, chamferRadius: 0))
+                    bar.geometry?.firstMaterial?.diffuse.contents = pathColor
+                    bar.geometry?.firstMaterial?.emission.contents = pathColor
+                    bar.position = SCNVector3(0.1 * side, 0, 0)
+                    bar.eulerAngles.y = .pi / 4 * side
+                    arrow.addChildNode(bar)
+                }
+                arrow.position = SCNVector3(a.x + d.x * t, a.y + d.y * t - 0.1, a.z + d.z * t)
+                arrow.eulerAngles.y = atan2(-d.x, -d.z)
+                group.addChildNode(arrow)
+            }
+        }
+        return group
     }
 
     static func camera(_ indoor: Indoor) -> SCNNode {

@@ -134,6 +134,17 @@ async def _build() -> dict[str, Any]:
         prev = nid
 
     fp["doors"] = [{**d, "kind": "door"} for d in fp["doors"]]
+
+    # Entrance scan as its own walk segment: entrance to the stairs and elevator core.
+    # Each scan has its own frame, so this path is in the entrance scan's plan frame.
+    c_polys = [r.polygon for r in sg_c.rooms.values() if r.polygon is not None]
+    c_minx = min(x for p in c_polys for x, _ in p.exterior.coords)
+    c_maxy = max(y for p in c_polys for _, y in p.exterior.coords)
+    c_z0 = entry_path["waypoints"][0]["z"] or 0.0
+    lobby_path = [{"x": round(w["x"] - c_minx, 3), "y": round((w["z"] or c_z0) - c_z0, 3),
+                   "z": round(c_maxy - w["y"], 3)} for w in entry_path["waypoints"]]
+    lobby_mesh = {"model_id": ids["concierge_entrance_stairs"], "min_x": c_minx, "max_y": c_maxy,
+                  "ref_z": c_z0, "rise_m": 0.0}
     loc = concierge["geolocation"]
     stories = (facts or {}).get("stories")
     return {
@@ -159,6 +170,9 @@ async def _build() -> dict[str, Any]:
         "edges": edges,
         "floor_plan": fp,
         "hazards_sample": [],
+        "meshes": {"lobby": lobby_mesh},
+        "lobby_walk": {"label": "Entrance to the stairs and elevator (scanned)",
+                       "mesh_url": f"/scan-mesh/{BUILDING_ID}--lobby/manifest", "path3d": lobby_path},
         "mesh": {"model_id": ids["unit_203"], **fp["origin"],
                  "ref_z": unit_path["waypoints"][0]["z"], "rise_m": 0.0},
         "facts": {"costar": facts, "unit_equipment_ok": unit_ok, "corridor_straight_m": straight,
@@ -167,7 +181,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("real_building", BUILDING_ID, 6)
+    key = cache.key_for("real_building", BUILDING_ID, 7)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))
