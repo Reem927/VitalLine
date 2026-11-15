@@ -157,10 +157,13 @@ def create_app(store: Store | None = None) -> FastAPI:
     def scan_mesh_manifest(building_id: str) -> dict[str, Any]:
         """Files of the converted scan mesh. First call builds it (can take a minute)."""
         from tools import scan_mesh
+        # "<building>--<part>" names an extra scan of the same building, e.g. the entrance scan.
+        base, _, part = building_id.partition("--")
         try:
-            mesh = load_building(building_id).get("mesh")
+            building = load_building(base)
         except KeyError:
             raise HTTPException(404, "unknown building") from None
+        mesh = (building.get("meshes") or {}).get(part) if part else building.get("mesh")
         info = scan_mesh.build(building_id, **mesh) if mesh else None
         if info is None:
             raise HTTPException(404, "no scan mesh for this building")

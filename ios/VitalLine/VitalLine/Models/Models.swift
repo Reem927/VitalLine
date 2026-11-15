@@ -151,6 +151,14 @@ struct Indoor: Codable {
     let legs: [Leg]?
     let meshUrl: String?           // backend path of the real scan mesh manifest, if any
     let nav: Nav?                  // walkable graph for live AR re-routing, if the scan has one
+    let lobbyWalk: LobbyWalk?      // the entrance scan, walked before the unit in the walkthrough
+}
+
+// A separate scan of the building entrance with its own route, in that scan's own frame.
+struct LobbyWalk: Codable {
+    let label: String
+    let meshUrl: String
+    let path3d: [Point3]
 }
 
 // Walkable graph of the scanned space, in the plan frame (metres; x, y up, z).
