@@ -300,6 +300,7 @@ class PlanRun:
             "path3d": self.building.get("path3d") or [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path],
             "ar_route": _ar_route(self.building.get("path3d")
                                   or [{"x": p["x"], "y": 0.0, "z": p["y"]} for p in path]),
+            "nav": self.building.get("nav"),
             "legs": [{"id": s.index, "kind": s.kind, "text": s.text, "real": _is_real(s.text, s.kind)}
                      for s in route.steps],
         }

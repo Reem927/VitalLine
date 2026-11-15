@@ -134,6 +134,15 @@ struct Indoor: Codable {
     let arRoute: [Point3]?         // path in the AR frame, for AR navigation
     let legs: [Leg]?
     let meshUrl: String?           // backend path of the real scan mesh manifest, if any
+    let nav: Nav?                  // walkable graph for live AR re-routing, if the scan has one
+}
+
+// Walkable graph of the scanned space, in the plan frame (metres; x, y up, z).
+struct Nav: Codable {
+    let nodes: [Point3]
+    let edges: [[Int]]             // pairs of node indices
+    let start: Int                 // suggested starting point
+    let goal: Int                  // the patient's point
 }
 
 struct Step: Codable, Identifiable {

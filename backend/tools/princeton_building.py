@@ -26,7 +26,8 @@ from geometry import scan_graph
 from tools.wolfram import _run
 
 BUILDING_ID = "princeton-live"
-MAX_LINK_M = 5.0        # horizontal distance between linked scan positions
+MAX_LINK_M = 7.5        # horizontal distance between linked scan positions on one level
+MAX_STAIR_LINK_M = 5.0  # horizontal distance between linked positions on a stair
 MAX_RISE_M = 2.2        # height change allowed on one stair link
 SAME_LEVEL_M = 0.3      # below this, two positions are on the same level
 FALLBACK_ADDRESS = "Princeton University campus, Princeton, NJ"
@@ -50,7 +51,8 @@ def _pano_graph(model: dict) -> tuple[nx.Graph, dict[str, tuple[float, float, fl
     g = nx.Graph()
     for (a, pa), (b, pb) in itertools.combinations(pts.items(), 2):
         run_m, rise = math.dist(pa[:2], pb[:2]), abs(pa[2] - pb[2])
-        if run_m > MAX_LINK_M or rise > MAX_RISE_M:
+        limit = MAX_LINK_M if rise <= SAME_LEVEL_M else MAX_STAIR_LINK_M
+        if run_m > limit or rise > MAX_RISE_M:
             continue
         if rise > SAME_LEVEL_M and run_m < rise * 0.8:      # steeper than any stair
             continue
@@ -60,9 +62,17 @@ def _pano_graph(model: dict) -> tuple[nx.Graph, dict[str, tuple[float, float, fl
     return g, pts
 
 
-def _route(g: nx.Graph, pts: dict) -> list[str]:
-    """Ground-level start to the farthest upper-level position in the largest connected part."""
+def _route(g: nx.Graph, pts: dict, labels: dict, start_label: str | None = None,
+           goal_label: str | None = None) -> list[str]:
+    """Shortest walk from the start scan point to the patient's scan point.
+
+    Both come from the local config when set (start_label, goal_label). Without them the
+    route runs from a ground-level position to the farthest reachable upper-level one.
+    """
     part = g.subgraph(max(nx.connected_components(g), key=len))
+    by_label = {labels.get(n): n for n in part}
+    if start_label in by_label and goal_label in by_label:
+        return nx.dijkstra_path(part, by_label[start_label], by_label[goal_label], weight="weight")
     zs = {n: pts[n][2] for n in part}
     low, high = min(zs.values()), max(zs.values())
     ground = [n for n in part if zs[n] - low < SAME_LEVEL_M]
@@ -76,13 +86,30 @@ def _route(g: nx.Graph, pts: dict) -> list[str]:
     return best[1]
 
 
+def _nav(g: nx.Graph, pts: dict, path: list[str], tf, z0: float) -> dict[str, Any]:
+    """The walkable graph around the route, in the plan frame (x, y up, z), for live re-routing.
+
+    The app finds where the user is, then follows shortest paths over this graph to the goal.
+    """
+    part = sorted(nx.node_connected_component(g, path[-1]))
+    index = {n: i for i, n in enumerate(part)}
+    nodes = []
+    for n in part:
+        x, y, z = pts[n]
+        p = tf(x, y)
+        nodes.append({"x": p["x"], "y": round(z - z0, 3), "z": p["y"]})
+    edges = [[index[a], index[b]] for a, b in g.edges if a in index and b in index]
+    return {"nodes": nodes, "edges": edges, "start": index[path[0]], "goal": index[path[-1]]}
+
+
 async def _build() -> dict[str, Any]:
     ids = demo_config()["princeton"]["matterport"]
     model = await matterport.layout(ids["primary"])
     geo = model.get("geolocation") or (await matterport.layout(ids["other_processing"])).get("geolocation")
     g, pts = _pano_graph(model)
-    path = _route(g, pts)
     labels = {p["id"]: p.get("label") for p in model["panoLocations"]}
+    cfg = demo_config()["princeton"]
+    path = _route(g, pts, labels, cfg.get("start_label"), cfg.get("goal_label"))
 
     sg = scan_graph.build(model)
     z0 = pts[path[0]][2]
@@ -151,6 +178,7 @@ async def _build() -> dict[str, Any]:
                                  for r in rooms],
                        "doors": [], "wall_height_m": round(heights[len(heights) // 2], 2) if heights else None},
         "path3d": path3d,
+        "nav": _nav(g, pts, path, tf, z0),
         "mesh": {"model_id": ids["primary"], "min_x": minx, "max_y": maxy, "ref_z": z0,
                  "rise_m": max(p["y"] for p in path3d)},
         "start_scan_point": labels.get(path[0]),
@@ -159,7 +187,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("princeton_building", 4)
+    key = cache.key_for("princeton_building", 5)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))
