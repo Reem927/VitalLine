@@ -64,6 +64,22 @@ struct Outdoor: Codable {
     let distanceKm: Double?
     let maneuvers: [Maneuver]?     // turn-by-turn from Valhalla; nil in mock data
     let routeNote: String?         // which driving rules the route used (emergency or ordinary)
+    let aerial: Aerial?            // Vexcel aerial view with where to stop, if available
+}
+
+// Aerial image of the building. Marker positions are fractions of the image (0...1).
+struct Aerial: Codable {
+    let imageUrl: String
+    let widthM: Int
+    let markers: [AerialMarker]
+    let note: String?
+}
+
+struct AerialMarker: Codable {
+    let kind: String               // "stop" | "building"
+    let label: String
+    let fx: Double
+    let fy: Double
 }
 
 // One turn instruction. shapeIndex is where it begins in `route`.

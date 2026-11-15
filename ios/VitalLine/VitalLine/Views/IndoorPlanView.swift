@@ -11,6 +11,7 @@ struct IndoorPlanView: View {
     @Environment(AppRouter.self) private var router
     var preview = false
     @State private var showFloorPlan = false
+    @State private var page = 0            // 0 = outside (aerial), 1 = inside (scan)
 
     var body: some View {
         ScrollView {
@@ -45,11 +46,35 @@ struct IndoorPlanView: View {
     private func recommended(_ plan: Plan) -> some View {
         if !preview { ElevatorToggle() }
 
-        Plan3DView(indoor: plan.indoor)
-            .id(Plan3DView.key(plan.indoor))
+        if let aerial = plan.outdoor.aerial {
+            // Slide between the outside view (where to stop) and the inside view (the route).
+            Picker("View", selection: $page) {
+                Text("1 · Outside").tag(0)
+                Text("2 · Inside").tag(1)
+            }
+            .pickerStyle(.segmented)
+            TabView(selection: $page) {
+                AerialView(aerial: aerial).tag(0)
+                Plan3DView(indoor: plan.indoor)
+                    .id(Plan3DView.key(plan.indoor))
+                    .tag(1)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: 340)
-        Text("Drag to rotate, pinch to zoom. Green door fits the \(equipmentName(plan)); red does not.")
-            .font(.caption).foregroundStyle(.textSecondary)
+            .animation(.easeInOut, value: page)
+            if page == 0 {
+                AerialLegend(aerial: aerial).card()
+            } else {
+                Text("Drag to rotate, pinch to zoom. Green door fits the \(equipmentName(plan)); red does not.")
+                    .font(.caption).foregroundStyle(.textSecondary)
+            }
+        } else {
+            Plan3DView(indoor: plan.indoor)
+                .id(Plan3DView.key(plan.indoor))
+                .frame(height: 340)
+            Text("Drag to rotate, pinch to zoom. Green door fits the \(equipmentName(plan)); red does not.")
+                .font(.caption).foregroundStyle(.textSecondary)
+        }
 
         HeaderCard(plan: plan)
 

@@ -174,6 +174,15 @@ def create_app(store: Store | None = None) -> FastAPI:
             raise HTTPException(404, "unknown mesh file")
         return FileResponse(scan_mesh.mesh_dir(building_id) / name)
 
+    @app.get("/aerial/{building_id}/image")
+    def aerial_image(building_id: str) -> FileResponse:
+        """Vexcel aerial image for the plan's outside view (built during the outdoor step)."""
+        from tools import aerial
+        path = aerial.image_path(building_id)
+        if "/" in building_id or not path.exists():
+            raise HTTPException(404, "no aerial image for this building")
+        return FileResponse(path, media_type="image/jpeg")
+
     # -- app contract v1 -------------------------------------------------------
 
     @app.post("/dispatch")

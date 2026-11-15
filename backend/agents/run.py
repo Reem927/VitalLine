@@ -233,6 +233,12 @@ class PlanRun:
             drive = f"{outdoor['eta_minutes']} min via {'Valhalla' if r['source'] == 'valhalla' else 'estimate'}"
         else:
             drive = "drive time unknown (no crew location)"
+        try:
+            from tools import aerial
+            stop = outdoor["route"][-1] if outdoor["route"] else None
+            outdoor["aerial"] = aerial.view(self.building, stop)
+        except Exception:  # noqa: BLE001 - the aerial view is optional and must never block a plan
+            outdoor["aerial"] = None
         sample = all("(sample)" in f["source"] for f in flags) and flags
         flag_txt = f"{len(flags)} flag{'s' if len(flags) != 1 else ''}"
         if sample:
