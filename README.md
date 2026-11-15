@@ -42,46 +42,13 @@ Two rules shape the design:
 | iOS app | SwiftUI, MapKit, SceneKit (3D plan), ARKit and RealityKit (AR navigation) |
 | Backend | Python, FastAPI |
 | Agents | LangChain Deep Agents (orchestrator and six subagents), traced in LangSmith |
-| Model | Set by `MODEL_NAME`. Claude by default; Gemini also works |
+| Model | Set by `MODEL_NAME`. Claude by default |
 | Geometry | networkx (walkable graph), shapely (door and turn fit) |
 | Math verification | Wolfram, through the Wolfram MCP server |
 | Routing | Valhalla, truck profile sized to an ambulance |
 | Building data | CoStar property records, Matterport 3D scans, Vexcel aerial imagery |
 | Storage | Supabase (Postgres and Auth), SQLite when no Supabase keys are set |
 | Phone to backend | Cloudflare quick tunnel, with a shared access token |
-
-## Run it
-
-The repository holds code only. Keys and licensed building data are not included.
-
-**Backend**
-
-```bash
-scripts/run_backend.sh
-```
-
-The first run creates `backend/.venv` and installs the pinned packages. Copy `backend/.env.example` to `backend/.env` and fill in the keys you have. Endpoints are listed at http://localhost:8000/docs and in [docs/API.md](docs/API.md).
-
-- With no keys at all, set `VITALLINE_OFFLINE=1`. The backend then plans on a synthetic building (`data/synthetic/demo_tower.json`) with no outside calls.
-- The real demo buildings need CoStar, Matterport and Vexcel keys, plus a local file `backend/config/demo_building.local.json` naming the scans to use. That file is not in the repository.
-
-**iOS app**
-
-Open `ios/VitalLine/VitalLine.xcodeproj` in Xcode and run it. The simulator talks to the backend at `localhost:8000`.
-
-To run on a phone:
-
-```bash
-scripts/run_tunnel.sh
-```
-
-Set `DEMO_TOKEN` in `backend/.env` first. The script prints the token and a temporary address. Paste the address into the app's sign-in screen under "Backend address". AR navigation needs a real iPhone and the camera permission in the app target.
-
-**Tests**
-
-```bash
-cd backend && .venv/bin/python -m pytest
-```
 
 ## Data and honesty
 
