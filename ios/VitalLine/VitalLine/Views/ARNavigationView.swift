@@ -149,10 +149,10 @@ struct ARNavigationView: View {
                         .buttonStyle(.bordered).tint(.white)
                 }
             } else {
-                Text("Where are you standing?").font(.headline)
-                Text("Tap the dot nearest to you. Green is you, red is the patient. Stand there, face along the first cyan line, then start.")
+                Text("Start at the building entrance").font(.headline)
+                Text("Stand at the entrance (green) and face into the building along the cyan line, then start. The route to the patient (red) updates by itself as you walk.")
                     .font(.caption).multilineTextAlignment(.center)
-                StartPicker(graph: graph, rooms: store.plan?.indoor.rooms ?? [], chosen: chosen) { start = $0 }
+                StartPicker(graph: graph, rooms: store.plan?.indoor.rooms ?? [], chosen: chosen) { _ in }
                     .frame(height: 190)
                 Button {
                     startVersion += 1
@@ -215,20 +215,11 @@ private struct StartPicker: View {
                     context.stroke(line, with: .color(.cyan), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
                     for n in visible {
                         let p = place(graph.points[n].x, graph.points[n].z)
-                        let r: CGFloat = n == chosen || n == graph.goal ? 7 : 4
-                        let color: Color = n == graph.goal ? .red : (n == chosen ? .green : .white.opacity(0.6))
+                        guard n == chosen || n == graph.goal else { continue }   // start and patient only
+                        let r: CGFloat = 7
+                        let color: Color = n == graph.goal ? .red : .green
                         context.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)), with: .color(color))
                     }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { location in
-                    let candidates = visible.filter { $0 != graph.goal }
-                    if let nearest = candidates.min(by: {
-                        hypot(place(graph.points[$0].x, graph.points[$0].z).x - location.x,
-                              place(graph.points[$0].x, graph.points[$0].z).y - location.y)
-                        < hypot(place(graph.points[$1].x, graph.points[$1].z).x - location.x,
-                                place(graph.points[$1].x, graph.points[$1].z).y - location.y)
-                    }) { pick(nearest) }
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -305,7 +296,7 @@ private struct ARRouteView: UIViewRepresentable {
                                       allowing: .estimatedPlane, alignment: .horizontal)
             if let hit = arView.session.raycast(down).first {
                 let height = camera.translation.y - hit.worldTransform.columns.3.y
-                if height > 0.6 && height < 1.9 { cameraHeight = height }
+                if height > 1.0 && height < 1.7 { cameraHeight = height }
             }
 
             let route = graph.path(from: start)
@@ -388,10 +379,11 @@ private struct ARRouteView: UIViewRepresentable {
                 let world = arrow.position(relativeTo: nil)
                 guard simd_distance(world, camera) < 6 else { continue }
                 let query = ARRaycastQuery(origin: world + SIMD3<Float>(0, 0.9, 0), direction: SIMD3<Float>(0, -1, 0),
-                                           allowing: .estimatedPlane, alignment: .any)
+                                           allowing: .estimatedPlane, alignment: .horizontal)
                 guard let hit = arView.session.raycast(query).first else { continue }
                 let y = hit.worldTransform.columns.3.y
-                if abs(y - world.y) < 0.7 {
+                // Small corrections only, onto flat ground: never up onto furniture.
+                if abs(y - world.y) < 0.35 {
                     arrow.setPosition(SIMD3<Float>(world.x, y + 0.025, world.z), relativeTo: nil)
                 }
             }

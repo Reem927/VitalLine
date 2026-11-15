@@ -74,7 +74,7 @@ struct ElevatorToggle: View {
         .card()
         .sensoryFeedback(.impact, trigger: store.elevatorOut)
         .onChange(of: store.elevatorOut) {
-            Task { await store.replan() }   // agents re-plan; progress shows again
+            store.elevatorToggled()         // switches to the precomputed route at once
         }
     }
 }

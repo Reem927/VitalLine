@@ -11,6 +11,7 @@ import SwiftUI
 struct FloorPlanCanvas: View {
     let indoor: Indoor
     var showsPath = true        // false = static reference map (Floor Plan tab)
+    var showsDoors = false      // door markers with widths, for the Floor Plan tab
     @State private var imageFailed = false
 
     private var imageURL: URL? {
@@ -63,6 +64,19 @@ struct FloorPlanCanvas: View {
                             Text(room.name).font(.caption2).foregroundStyle(.secondary),
                             at: toScreen(PlanPoint(x: cx, y: cy))
                         )
+                    }
+                }
+
+                if showsDoors && !showsPath {
+                    // Every door with its width in inches: green fits the equipment, red does not
+                    for door in indoor.doors {
+                        let c = toScreen(door.at)
+                        let dot = CGRect(x: c.x - 5, y: c.y - 5, width: 10, height: 10)
+                        context.fill(Path(ellipseIn: dot), with: .color(door.passable ? .green : .red))
+                        context.stroke(Path(ellipseIn: dot), with: .color(.white), lineWidth: 1)
+                        context.draw(Text(String(format: "%.0f", door.widthIn)).font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white),
+                                     at: CGPoint(x: c.x, y: c.y - 11))
                     }
                 }
 
