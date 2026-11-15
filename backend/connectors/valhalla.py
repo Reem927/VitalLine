@@ -1,13 +1,14 @@
-"""Road routing through Valhalla with a truck profile.
+"""Road routing through Valhalla with a truck profile sized to the ambulance.
 
-Vehicle height and width come from the agency's spec (VEHICLE_HEIGHT_M, VEHICLE_WIDTH_M in
-backend/.env). If they are not set we route without size limits and say so.
+Vehicle size comes from rules.vehicle: the agency's spec when set in backend/.env,
+otherwise a cited reference ambulance. The result says which one was used.
 """
 
 import httpx
 
 from app.config import env
 from connectors import cache
+from rules import vehicle
 
 PUBLIC_URL = "https://valhalla1.openstreetmap.de"
 CLIENT_ID = "hackathon-prototype"
@@ -37,10 +38,11 @@ def _decode_polyline6(encoded: str) -> list[dict]:
 
 async def route(start: dict, end: dict) -> dict:
     """Truck-profile route from start to end ({"lat", "lon"} each)."""
-    height, width = env("VEHICLE_HEIGHT_M"), env("VEHICLE_WIDTH_M")
-    options = {}
-    if height and width:
-        options = {"truck": {"height": float(height), "width": float(width)}}
+    v = vehicle.profile()
+    truck = {"height": round(v["height_m"], 2), "width": round(v["width_m"], 2)}
+    if v.get("length_m"):
+        truck["length"] = round(v["length_m"], 2)
+    options = {"truck": truck}
     body = {"locations": [start, end], "costing": "truck", "costing_options": options,
             "units": "kilometers", "directions_options": {"units": "kilometers"}}
     key = cache.key_for(body)
@@ -57,6 +59,6 @@ async def route(start: dict, end: dict) -> dict:
         "distance_km": trip["summary"]["length"],
         "time_s": trip["summary"]["time"],
         "maneuvers": [m["instruction"] for m in leg["maneuvers"]],
-        "vehicle_size_applied": bool(options),
+        "vehicle": {"source": v["source"], **truck},
         "source": "Valhalla (truck profile)",
     })

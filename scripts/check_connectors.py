@@ -52,7 +52,7 @@ async def main():
 
     async def vh():
         r = await valhalla.route({"lat": lat + 0.02, "lon": lon + 0.02}, {"lat": lat, "lon": lon})
-        return f"{r['distance_km']} km, {len(r['shape'])} shape points, size limits applied={r['vehicle_size_applied']}"
+        return f"{r['distance_km']} km, {len(r['shape'])} shape points, vehicle={r['vehicle']}"
 
     async def wx():
         return f"{len(await nws.alerts(lat, lon))} active alerts"
