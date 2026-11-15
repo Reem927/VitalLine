@@ -90,7 +90,8 @@ struct ARNavigationView: View {
 
     private var graph: NavGraph? {
         let indoor = store.plan?.indoor
-        return NavGraph(indoor?.nav) ?? NavGraph.chain(indoor?.path3d)
+        // The plan's own route, entrance to patient, placed once and kept fixed.
+        return NavGraph.chain(indoor?.path3d) ?? NavGraph(indoor?.nav)
     }
 
     var body: some View {
@@ -140,7 +141,7 @@ struct ARNavigationView: View {
                 Text(status.arrived ? "You have reached the patient's location"
                                     : (status.rerouted ? "Route updated from where you are" : "Follow the chevrons"))
                     .font(.headline)
-                Text("Shortest way from your position, updated as you move. Tracking can drift; realign if the arrows look off.")
+                Text("Shortest route from the entrance, fixed in place. If the arrows drift, go back to the entrance and tap Realign.")
                     .font(.caption).multilineTextAlignment(.center)
                 HStack(spacing: 12) {
                     Button("Realign") { running = false }
@@ -150,7 +151,7 @@ struct ARNavigationView: View {
                 }
             } else {
                 Text("Start at the building entrance").font(.headline)
-                Text("Stand at the entrance (green) and face into the building along the cyan line, then start. The route to the patient (red) updates by itself as you walk.")
+                Text("Stand at the entrance (green) and face into the building along the cyan line, then start. The arrows lead to the patient (red).")
                     .font(.caption).multilineTextAlignment(.center)
                 StartPicker(graph: graph, rooms: store.plan?.indoor.rooms ?? [], chosen: chosen) { _ in }
                     .frame(height: 190)
@@ -331,15 +332,15 @@ private struct ARRouteView: UIViewRepresentable {
             var user = rotation.inverse.act(world - origin)
             user.y -= cameraHeight                              // floor height under the phone
             guard let best = graph.entry(near: user) else { return }
-            if best != entry { draw(from: best, user: user) }
+            // The route stays where it was placed at the start. Redrawing it from the
+            // tracked position made the arrows jump whenever tracking drifted.
             snapArrows(near: world)
 
             let goal = graph.points[graph.goal]
             let flat = simd_distance(SIMD2<Float>(user.x, user.z), SIMD2<Float>(goal.x, goal.z))
             let arrived = flat < 1.5 && abs(user.y - goal.y) < 1.5
             let remaining = simd_distance(user, graph.points[best]) + graph.costToGoal[best]
-            let status = ARStatus(remaining: remaining, arrived: arrived, rerouted: best != initialEntry
-                                  && !graph.path(from: initialEntry ?? best).contains(best))
+            let status = ARStatus(remaining: remaining, arrived: arrived, rerouted: false)
             DispatchQueue.main.async { self.report(status) }
         }
 

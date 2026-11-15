@@ -34,21 +34,36 @@ SAME_LEVEL_M = 0.3      # below this, two positions are on the same level
 FALLBACK_ADDRESS = "Princeton University campus, Princeton, NJ"
 
 
-def _walls(model: dict) -> list[LineString]:
+def _walls_by_level(model: dict) -> list[tuple[float | None, list[LineString]]]:
+    """Solid walls of each scanned level, with that level's scanner height.
+
+    Levels overlap in plan, so a link on one level must only be tested against that level's
+    walls. Testing against every level's walls blocks real paths and forces detours.
+    """
+    levels = scan_graph.build(model).floors
     out = []
     for f in model["floors"]:
         verts = {v["id"]: (v["position"]["x"], v["position"]["y"]) for v in f["vertices"]}
-        for e in f["edges"]:
-            ids = [v["id"] for v in e["vertices"]]
-            if e["type"] == "wall" and len(ids) == 2 and all(i in verts for i in ids) and not e.get("openings"):
-                out.append(LineString([verts[ids[0]], verts[ids[1]]]))
+        walls = []
+        for edge in f["edges"]:
+            ids = [v["id"] for v in edge["vertices"]]
+            if edge["type"] == "wall" and len(ids) == 2 and all(i in verts for i in ids) and not edge.get("openings"):
+                walls.append(LineString([verts[ids[0]], verts[ids[1]]]))
+        out.append((levels[f["id"]]["z"], walls))
     return out
+
+
+def _walls_at(levels: list, z: float) -> list[LineString]:
+    known = [(lz, walls) for lz, walls in levels if lz is not None]
+    if not known:
+        return [w for _, walls in levels for w in walls]
+    return min(known, key=lambda item: abs(item[0] - z))[1]
 
 
 def _pano_graph(model: dict) -> tuple[nx.Graph, dict[str, tuple[float, float, float]]]:
     pts = {p["id"]: (p["position"]["x"], p["position"]["y"], p["position"]["z"])
            for p in model["panoLocations"] if p.get("position")}
-    walls = _walls(model)
+    levels = _walls_by_level(model)
     g = nx.Graph()
     for (a, pa), (b, pb) in itertools.combinations(pts.items(), 2):
         run_m, rise = math.dist(pa[:2], pb[:2]), abs(pa[2] - pb[2])
@@ -57,7 +72,8 @@ def _pano_graph(model: dict) -> tuple[nx.Graph, dict[str, tuple[float, float, fl
             continue
         if rise > SAME_LEVEL_M and run_m < rise * 0.8:      # steeper than any stair
             continue
-        if rise <= SAME_LEVEL_M and any(w.intersects(LineString([pa[:2], pb[:2]])) for w in walls):
+        if rise <= SAME_LEVEL_M and any(w.intersects(LineString([pa[:2], pb[:2]]))
+                                        for w in _walls_at(levels, pa[2])):
             continue
         g.add_edge(a, b, weight=math.hypot(run_m, rise), run=run_m, rise=rise)
     return g, pts
@@ -103,6 +119,44 @@ def _nav(g: nx.Graph, pts: dict, path: list[str], tf, z0: float) -> dict[str, An
     return {"nodes": nodes, "edges": edges, "start": index[path[0]], "goal": index[path[-1]]}
 
 
+WALKED_RADIUS_M = 1.75   # a straight shortcut must stay this close to places the scanner stood
+
+
+def _straighten(path: list[str], pts: dict, levels: list) -> list[str]:
+    """Remove zigzags: skip intermediate points where a straight line is safe to walk.
+
+    A shortcut between two route points is allowed only on one level, when it crosses no
+    wall and every half metre of it lies near a scan position (ground the scanner covered).
+    Stairs are never shortcut.
+    """
+    def level(a: str, b: str) -> bool:
+        return abs(pts[a][2] - pts[b][2]) <= SAME_LEVEL_M
+
+    def clear(i: int, j: int) -> bool:
+        a, b = pts[path[i]], pts[path[j]]
+        if not all(level(path[i], path[k]) for k in range(i, j + 1)):
+            return False
+        line = LineString([a[:2], b[:2]])
+        if any(w.intersects(line) for w in _walls_at(levels, a[2])):
+            return False
+        near = [p for p in pts.values() if abs(p[2] - a[2]) <= SAME_LEVEL_M]
+        steps = max(1, int(line.length / 0.5))
+        for s in range(steps + 1):
+            q = line.interpolate(s / steps, normalized=True)
+            if min(math.dist((q.x, q.y), p[:2]) for p in near) > WALKED_RADIUS_M:
+                return False
+        return True
+
+    out, i = [path[0]], 0
+    while i < len(path) - 1:
+        j = len(path) - 1
+        while j > i + 1 and not clear(i, j):
+            j -= 1
+        out.append(path[j])
+        i = j
+    return out
+
+
 async def _build() -> dict[str, Any]:
     ids = demo_config()["princeton"]["matterport"]
     model = await matterport.layout(ids["primary"])
@@ -110,7 +164,8 @@ async def _build() -> dict[str, Any]:
     g, pts = _pano_graph(model)
     labels = {p["id"]: p.get("label") for p in model["panoLocations"]}
     cfg = demo_config()["princeton"]
-    path = _route(g, pts, labels, cfg.get("start_label"), cfg.get("goal_label"))
+    path = _straighten(_route(g, pts, labels, cfg.get("start_label"), cfg.get("goal_label")),
+                       pts, _walls_by_level(model))
 
     sg = scan_graph.build(model)
     z0 = pts[path[0]][2]
@@ -131,7 +186,7 @@ async def _build() -> dict[str, Any]:
         nodes.append({"id": f"p{i}", "floor": 2 if upper else 1, "label": f"Scan point {labels.get(n)}",
                       "checkpoint": i == 0, "patient": i == len(path) - 1, **tf(x, y)})
     for i, (a, b) in enumerate(itertools.pairwise(path)):
-        e = g.edges[a, b]
+        e = {"run": math.dist(pts[a][:2], pts[b][:2]), "rise": abs(pts[a][2] - pts[b][2])}
         if e["rise"] > SAME_LEVEL_M:
             if edges and edges[-1]["kind"] == "stairs":
                 # One flight split by a landing scan point: extend the same stairs edge.
@@ -188,7 +243,7 @@ async def _build() -> dict[str, Any]:
 
 
 def build(refresh: bool = False) -> dict[str, Any]:
-    key = cache.key_for("princeton_building", 6)
+    key = cache.key_for("princeton_building", 8)
     if not refresh and (hit := cache.get("building", key)) is not None:
         return hit
     return cache.put("building", key, _run(_build()))
