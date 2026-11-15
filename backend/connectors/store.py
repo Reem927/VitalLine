@@ -23,9 +23,19 @@ def now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
+def canonical_ts(ts: str) -> str:
+    """One spelling per instant. Postgres returns timestamptz trimmed (".030" -> ".03", ".000"
+    dropped) and callers may send "Z" or no offset, so hash the normalised UTC form."""
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat(timespec="microseconds")
+
+
 def event_hash(prev_hash: str | None, row: dict[str, Any]) -> str:
     body = {k: row[k] for k in
             ("dispatch_id", "seq", "occurred_at", "actor", "type", "summary", "payload")}
+    body["occurred_at"] = canonical_ts(str(body["occurred_at"]))
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(((prev_hash or "") + canonical).encode()).hexdigest()
 
