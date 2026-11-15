@@ -1,4 +1,4 @@
-"""Smoke test for the agent stack: deepagents + Gemini + a subagent + Wolfram MCP + LangSmith.
+"""Smoke test for the agent stack: deepagents + the configured model + a subagent + Wolfram MCP + LangSmith.
 
 Run from the repo root:
     backend/.venv/bin/python scripts/check_agent.py
@@ -14,7 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ENV_PATH = Path(__file__).resolve().parent.parent / "backend" / ".env"
-DEFAULT_MODEL = "gemini-4-hydrogen"
+DEFAULT_MODEL = "anthropic:claude-sonnet-5-5"
 WOLFRAM_MCP_URL = "https://agenttools.wolfram.com/mcp"
 
 TEST_SEGMENTS_M = [12.5, 30.0, 8.2, 41.3]  # test values, not a real building
@@ -27,16 +27,14 @@ def sum_segments() -> dict:
 
 async def main() -> int:
     load_dotenv(ENV_PATH)
-    if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
-        print(f"No Gemini key in {ENV_PATH}")
-        return 1
-
     from deepagents import create_deep_agent
-    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain.chat_models import init_chat_model
     from langchain_mcp_adapters.client import MultiServerMCPClient
 
     model_name = os.getenv("MODEL_NAME") or DEFAULT_MODEL
-    model = ChatGoogleGenerativeAI(model=model_name)
+    if ":" not in model_name:
+        model_name = ("anthropic:" if model_name.startswith("claude") else "google_genai:") + model_name
+    model = init_chat_model(model_name)
 
     mcp = MultiServerMCPClient(
         {"wolfram": {"transport": "streamable_http", "url": WOLFRAM_MCP_URL}}
