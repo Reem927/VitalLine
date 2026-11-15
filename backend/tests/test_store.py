@@ -44,3 +44,14 @@ def test_plan_versions(store):
     assert store.save_plan(d["id"], {"a": 1}) == 1
     assert store.save_plan(d["id"], {"a": 2}) == 2
     assert store.latest_plan(d["id"]) == {"a": 2, "version": 2}
+
+
+def test_chain_survives_postgres_timestamp_format(store):
+    # Postgres/PostgREST trims trailing zeros (".030" -> ".03", ".000" dropped).
+    d = _dispatch(store)
+    store.append_event(d["id"], "note", "a", occurred_at="2026-11-14T14:39:52.030+00:00")
+    store.append_event(d["id"], "note", "b", occurred_at="2026-11-14T14:39:53.000Z")
+    events = store.list_events(d["id"])
+    events[0]["occurred_at"] = "2026-11-14T14:39:52.03+00:00"
+    events[1]["occurred_at"] = "2026-11-14T14:39:53+00:00"
+    assert verify_chain(events)

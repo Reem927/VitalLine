@@ -19,6 +19,9 @@ create table if not exists dispatches (
   saved         boolean
 );
 
+create index if not exists dispatches_created_at_idx on dispatches (created_at desc);
+create index if not exists dispatches_saved_idx on dispatches (saved);
+
 create table if not exists dispatch_events (
   id           bigint generated always as identity primary key,
   dispatch_id  uuid not null references dispatches(id),
@@ -45,7 +48,9 @@ create table if not exists plans (
 
 -- Append-only: block updates and deletes on the event log.
 create or replace function dispatch_events_append_only() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = ''
+as $$
 begin
   raise exception 'dispatch_events is append-only';
 end $$;
@@ -59,3 +64,13 @@ create trigger dispatch_events_no_change
 alter table dispatches enable row level security;
 alter table dispatch_events enable row level security;
 alter table plans enable row level security;
+
+-- Supabase's auto-RLS helper (fired by the ensure_rls event trigger) is SECURITY DEFINER and
+-- callable over /rest/v1/rpc by default. The trigger does not need API callers.
+do $$
+begin
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'rls_auto_enable') then
+    revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+  end if;
+end $$;
